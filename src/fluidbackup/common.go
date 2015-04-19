@@ -9,6 +9,8 @@ import "math/rand"
  * and shared definitions.
  */
 
+FILE_BLOCK_SIZE = 4096
+
 //
 // call() sends an RPC to the rpcname handler on server srv
 // with arguments args, waits for the reply, and leaves the
