@@ -1,3 +1,7 @@
+package fluidbackup
+
+import "sync"
+
 const (
 	STATUS_ONLINE = 0
 	STATUS_OFFLINE = 1
@@ -10,6 +14,7 @@ type PeerId struct {
 
 type Peer struct {
 	mu sync.Mutex
+	protocol *Protocol
 	id PeerId
 	status int
 	localBytes int // how many bytes we've agreed to store for this peer

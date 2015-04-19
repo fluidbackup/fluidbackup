@@ -1,5 +1,8 @@
 package fluidbackup
 
+import "sync"
+import "math/rand"
+
 type PeerRequest struct {
 	Bytes int
 	IgnorePeers map[PeerId]bool
@@ -38,14 +41,14 @@ func (this *PeerStore) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool)
 
 	for peerId, peer := range this.peers {
 		_, shouldIgnore := ignorePeers[peerId]
-		if !shouldIgnore && peer.reserveBytes(request.bytes) {
-			return peerId
+		if !shouldIgnore && peer.reserveBytes(bytes) {
+			return peer
 		}
 	}
 
 	// none of our peers could satisfy this request with existing agreements
 	// update last request so that we will create new agreement and eventually satisfy
-	lastRequest = &PeerRequest{Bytes: bytes, IgnorePeers: ignorePeers}
+	this.lastRequest = &PeerRequest{Bytes: bytes, IgnorePeers: ignorePeers}
 	return nil
 }
 
@@ -67,9 +70,9 @@ func (this *PeerStore) update() {
 func (this *PeerStore) createAgreementSatisfying(request PeerRequest) {
 	// pick random online peer that isn't in the ignore list
 	this.mu.Lock()
-	possiblePeers = make([]*Peer)
+	possiblePeers := make([]*Peer, 0)
 	for peerId, peer := range this.peers {
-		_, shouldIgnore := request.ignorePeers[peerId]
+		_, shouldIgnore := request.IgnorePeers[peerId]
 		if !shouldIgnore && peer.isOnline() {
 			possiblePeers = append(possiblePeers, peer)
 		}
@@ -77,5 +80,5 @@ func (this *PeerStore) createAgreementSatisfying(request PeerRequest) {
 	randomPeer := possiblePeers[rand.Intn(len(possiblePeers))]
 	this.mu.Unlock() // don't want to hold lock during long-lived peer communication
 
-	randomPeer.proposeAgreement(request.bytes, request.bytes)
+	randomPeer.proposeAgreement(request.Bytes, request.Bytes)
 }

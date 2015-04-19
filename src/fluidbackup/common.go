@@ -2,7 +2,7 @@ package fluidbackup
 
 import "net/rpc"
 import "fmt"
-import "rand"
+import "math/rand"
 
 /**
  * Contains mechanisms for server communication,
