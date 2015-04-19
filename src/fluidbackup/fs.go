@@ -1,6 +1,10 @@
 package fluidbackup
 
-//import "fmt"
+import "fmt"
 
 type FluidSystem struct {
+}
+
+func (fs *FluidSystem) PrintHelloWorld() {
+	fmt.Println("Hellow World")
 }
