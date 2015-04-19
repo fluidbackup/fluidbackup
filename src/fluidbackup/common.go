@@ -9,7 +9,9 @@ import "math/rand"
  * and shared definitions.
  */
 
-FILE_BLOCK_SIZE = 4096
+const FILE_BLOCK_SIZE = 1024 * 1024
+const DEFAULT_N = 12
+const DEFAULT_K = 8
 
 //
 // call() sends an RPC to the rpcname handler on server srv

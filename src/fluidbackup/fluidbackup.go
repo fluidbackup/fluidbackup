@@ -1,12 +1,29 @@
 package fluidbackup
 
-import "fmt"
+import "log"
+import "io"
+import "os"
+
+var Log struct {
+	Info *log.Logger
+	Warn *log.Logger
+	Error *log.Logger
+}
+
+func InitLogging(infoHandle io.Writer, warnHandle io.Writer, errorHandle io.Writer) {
+	Log.Info = log.New(infoHandle, "INFO: ", log.Ldate | log.Ltime | log.Lshortfile)
+	Log.Warn = log.New(warnHandle, "WARN: ", log.Ldate | log.Ltime | log.Lshortfile)
+	Log.Error = log.New(errorHandle, "ERROR: ", log.Ldate | log.Ltime | log.Lshortfile)
+}
 
 /* This is the entry point into the fluidbackup system,
 and provides the interface for clients to interact with said system. */
 type FluidBackup struct {
+
 }
 
-func (fb *FluidBackup) PrintTrueHelloWorld() {
-	fmt.Println("Hello World")
+func MakeFluidBackup() *FluidBackup {
+	InitLogging(os.Stdout, os.Stdout, os.Stderr)
+	this := new(FluidBackup)
+	return this
 }
