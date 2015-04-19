@@ -8,15 +8,15 @@ type PeerRequest struct {
 	IgnorePeers map[PeerId]bool
 }
 
-type PeerStore struct {
+type PeerList struct {
 	mu sync.Mutex
 	protocol *Protocol
 	peers map[PeerId]*Peer
 	lastRequest *PeerRequest
 }
 
-func MakePeerStore(protocol *Protocol) *PeerStore {
-	this := new(PeerStore)
+func MakePeerList(protocol *Protocol) *PeerList {
+	this := new(PeerList)
 	this.protocol = protocol
 	this.peers = make(map[PeerId]*Peer)
 	this.lastRequest = nil
@@ -35,7 +35,7 @@ func MakePeerStore(protocol *Protocol) *PeerStore {
  * Caller requires [bytes] free bytes to use and doesn't want the peer to be in [ignorePeers] list.
  * Returns nil if we aren't able to satisfy the request (in this case we should also launch task to get more space).
  */
-func (this *PeerStore) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool) *Peer {
+func (this *PeerList) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool) *Peer {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -52,7 +52,7 @@ func (this *PeerStore) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool)
 	return nil
 }
 
-func (this *PeerStore) update() {
+func (this *PeerList) update() {
 	this.mu.Lock()
 
 	// handle last failed request if set
@@ -67,7 +67,7 @@ func (this *PeerStore) update() {
 	this.mu.Unlock()
 }
 
-func (this *PeerStore) createAgreementSatisfying(request PeerRequest) {
+func (this *PeerList) createAgreementSatisfying(request PeerRequest) {
 	// pick random online peer that isn't in the ignore list
 	this.mu.Lock()
 	possiblePeers := make([]*Peer, 0)
