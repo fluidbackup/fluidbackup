@@ -77,8 +77,12 @@ func (this *PeerStore) createAgreementSatisfying(request PeerRequest) {
 			possiblePeers = append(possiblePeers, peer)
 		}
 	}
-	randomPeer := possiblePeers[rand.Intn(len(possiblePeers))]
 	this.mu.Unlock() // don't want to hold lock during long-lived peer communication
 
+	if len(possiblePeers) == 0 {
+		return
+	}
+
+	randomPeer := possiblePeers[rand.Intn(len(possiblePeers))]
 	randomPeer.proposeAgreement(request.Bytes, request.Bytes)
 }
