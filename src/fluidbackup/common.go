@@ -2,6 +2,7 @@ package fluidbackup
 
 import "net/rpc"
 import "fmt"
+import "rand"
 
 /**
  * Contains mechanisms for server communication,
@@ -40,4 +41,13 @@ func call(srv string, rpcname string,
 
 	fmt.Println(err)
 	return false
+}
+
+func randSeq(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letters[rand.Intn(len(letters))]
+    }
+    return string(b)
 }
