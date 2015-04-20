@@ -1,6 +1,7 @@
 package fluidbackup
 
 import "sync"
+import "strconv"
 
 const (
 	STATUS_ONLINE = 0
@@ -38,7 +39,7 @@ func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 }
 
 func (this *Peer) storeShard(shard *BlockShard) bool {
-	return false
+	return this.protocol.storeShard(this.id, string(shard.Parent.Id) + "_" + strconv.Itoa(shard.ShardIndex), shard.Contents)
 }
 
 /*

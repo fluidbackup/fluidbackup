@@ -11,9 +11,14 @@ type BlockShard struct {
 	Peer *Peer
 	Available bool // whether the peer has confirmed receipt of the shard
 
+	Parent *Block
+	ShardIndex int
+
 	// temporary fields
 	Contents []byte // cleared once the peer confirms receipt of the shard
 }
+
+type BlockId string
 
 /*
  * Blocks are the unit of distribution.
@@ -22,6 +27,7 @@ type BlockShard struct {
  *  N shards.
  */
 type Block struct {
+	Id BlockId
 	Hash []byte
 	N int
 	K int
@@ -55,6 +61,7 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 	defer this.mu.Unlock()
 
 	block := &Block{}
+	block.Id = BlockId(randSeq(16))
 	block.N = DEFAULT_N
 	block.K = DEFAULT_K
 	block.ParentFile = path
@@ -70,6 +77,8 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 			Peer: nil,
 			Available: false,
 			Contents: shardBytes,
+			Parent: block,
+			ShardIndex: shardIndex,
 		}
 	}
 
@@ -85,14 +94,14 @@ func (this *BlockStore) update() {
 	for _, block := range this.blocks {
 		// first pass: find existing used peers
 		ignorePeers := make(map[PeerId]bool)
-		for _, shard := block.Shards {
+		for _, shard := range block.Shards {
 			if shard.Peer != nil {
 				ignorePeers[shard.Peer.id] = true
 			}
 		}
 
 		// second pass: actually find new peers
-		for _, shard := block.Shards {
+		for _, shard := range block.Shards {
 			if shard.Peer == nil {
 				availablePeer := this.peerList.FindAvailablePeer(len(shard.Contents), ignorePeers)
 
@@ -109,9 +118,8 @@ func (this *BlockStore) update() {
 
 	// commit shard data to peers
 	// we only commit once per update iteration to avoid hogging the lock?
-	var targetShard *BlockShard
 	for _, block := range this.blocks {
-		for _, shard := block.Shards {
+		for _, shard := range block.Shards {
 			if shard.Peer != nil && !shard.Available {
 				if shard.Peer.storeShard(shard) {
 					shard.Available = true
