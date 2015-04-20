@@ -26,16 +26,28 @@ type Peer struct {
 	remoteUsedBytes int
 }
 
+func MakePeer(id PeerId, protocol *Protocol) *Peer {
+	this := new(Peer)
+	this.protocol = protocol
+	this.id = id
+	this.status = STATUS_ONLINE
+	return this
+}
+
 func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 	if this.protocol.proposeAgreement(this.id, localBytes, remoteBytes) {
-		this.mu.Lock()
-		this.localBytes += localBytes
-		this.remoteBytes += remoteBytes
-		this.mu.Unlock()
+		this.eventAgreement(localBytes, remoteBytes)
 		return true
 	}
 
 	return false
+}
+
+func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
+	this.mu.Lock()
+	this.localBytes += localBytes
+	this.remoteBytes += remoteBytes
+	this.mu.Unlock()
 }
 
 func (this *Peer) storeShard(shard *BlockShard) bool {

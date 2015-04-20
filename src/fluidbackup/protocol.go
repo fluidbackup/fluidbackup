@@ -104,3 +104,13 @@ func (this *Protocol) storeShard(peerId PeerId, label string, bytes []byte) bool
 	success := this.call(peerId, "StoreShard", args, &reply)
 	return success && reply.Confirm
 }
+
+func (this *Protocol) HandleProposeAgreement(args *ProposeAgreementArgs, reply *ProposeAgreementReply) error {
+	if this.peerList == nil {
+		reply.Accept = false
+	} else {
+		reply.Accept = this.peerList.HandleProposeAgreement(args.Me, args.YourBytes, args.MyBytes)
+	}
+
+	return nil
+}

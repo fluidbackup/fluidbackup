@@ -86,3 +86,26 @@ func (this *PeerList) createAgreementSatisfying(request PeerRequest) {
 	randomPeer := possiblePeers[rand.Intn(len(possiblePeers))]
 	randomPeer.proposeAgreement(request.Bytes, request.Bytes)
 }
+
+func (this *PeerList) HandleProposeAgreement(peerId PeerId, localBytes int, remoteBytes int) bool {
+	// don't store more than peer
+	if localBytes > remoteBytes {
+		return false
+	}
+
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	// do other checking to see if proposal is useful for us...
+	// TODO
+	// ...
+
+	// okay, we've accepted the proposal
+	peer, ok := this.peers[peerId]
+	if !ok {
+		peer := MakePeer(peerId, this.protocol)
+		this.peers[peerId] = peer
+	}
+	peer.eventAgreement(localBytes, remoteBytes)
+
+	return true
+}
