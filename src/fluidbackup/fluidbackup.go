@@ -5,12 +5,14 @@ import "io"
 import "os"
 
 var Log struct {
+	Debug *log.Logger
 	Info *log.Logger
 	Warn *log.Logger
 	Error *log.Logger
 }
 
-func InitLogging(infoHandle io.Writer, warnHandle io.Writer, errorHandle io.Writer) {
+func InitLogging(debugHandle io.Writer, infoHandle io.Writer, warnHandle io.Writer, errorHandle io.Writer) {
+	Log.Debug = log.New(debugHandle, "DEBUG: ", log.Ldate | log.Ltime | log.Lshortfile)
 	Log.Info = log.New(infoHandle, "INFO: ", log.Ldate | log.Ltime | log.Lshortfile)
 	Log.Warn = log.New(warnHandle, "WARN: ", log.Ldate | log.Ltime | log.Lshortfile)
 	Log.Error = log.New(errorHandle, "ERROR: ", log.Ldate | log.Ltime | log.Lshortfile)
@@ -23,7 +25,7 @@ type FluidBackup struct {
 }
 
 func MakeFluidBackup() *FluidBackup {
-	InitLogging(os.Stdout, os.Stdout, os.Stderr)
+	InitLogging(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
 	this := new(FluidBackup)
 	return this
 }
