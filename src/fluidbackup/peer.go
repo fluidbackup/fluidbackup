@@ -37,6 +37,10 @@ func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 	return false
 }
 
+func (this *Peer) storeShard(shard *BlockShard) bool {
+	return false
+}
+
 /*
  * Attempts to reserve a number of bytes for storage on this peer.
  * Returns true if the bytes have been reserved for use by caller, or false if reservation failed.
