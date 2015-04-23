@@ -3,6 +3,7 @@ package fluidbackup
 import "crypto/sha1"
 import "sync"
 import "math/rand"
+import "time"
 
 type BlockId int64
 type BlockShardId int64
@@ -53,7 +54,10 @@ func MakeBlockStore(peerList *PeerList) *BlockStore {
 	this.blocks = make(map[BlockId]*Block, 0)
 
 	go func() {
-		this.update()
+		for {
+			this.update()
+			time.Sleep(time.Duration(50 * time.Millisecond))
+		}
 	}()
 
 	return this

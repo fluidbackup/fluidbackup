@@ -103,11 +103,10 @@ func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply int
 }
 
 func (this *Protocol) ping(peerId PeerId) bool {
-	Log.Debug.Printf("Pinging %s", peerId.String())
 	args := &PingArgs{Me: this.getMe()}
 	var reply PingReply
 	success := this.call(peerId, "Ping", args, &reply)
-	Log.Debug.Printf("Pong from %s: %t", peerId.String(), success)
+	Log.Debug.Printf("Ping %s: %t", peerId.String(), success)
 	return success
 }
 
@@ -119,6 +118,7 @@ func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteByte
 	}
 	var reply ProposeAgreementReply
 	success := this.call(peerId, "ProposeAgreement", args, &reply)
+	Log.Debug.Printf("ProposeAgreement %s (local: %d; remote: %d): %t", peerId.String(), localBytes, remoteBytes, success && reply.Accept)
 	return success && reply.Accept
 }
 
@@ -147,7 +147,7 @@ func (this *Protocol) HandleProposeAgreement(args *ProposeAgreementArgs, reply *
 	return nil
 }
 
-func (this *Protocol) HandleStoresShard(args *StoreShardArgs, reply *StoreShardReply) error {
+func (this *Protocol) HandleStoreShard(args *StoreShardArgs, reply *StoreShardReply) error {
 	if this.peerList == nil {
 		reply.Confirm = false
 	} else {

@@ -40,12 +40,14 @@ func MakePeer(id PeerId, protocol *Protocol) *Peer {
 	this.status = STATUS_ONLINE
 
 	go func() {
-		this.update()
+		for {
+			this.update()
 
-		if Debug {
-			time.Sleep(time.Duration(rand.Intn(3000)) * time.Millisecond + 3 * time.Second)
-		} else {
-			time.Sleep(time.Duration(rand.Intn(60000)) * time.Millisecond + 30 * time.Second)
+			if Debug {
+				time.Sleep(time.Duration(rand.Intn(3000)) * time.Millisecond + 3 * time.Second)
+			} else {
+				time.Sleep(time.Duration(rand.Intn(60000)) * time.Millisecond + 30 * time.Second)
+			}
 		}
 	}()
 
@@ -62,6 +64,7 @@ func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 }
 
 func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
+	Log.Debug.Printf("New agreement with %s (%d to %d)", this.id.String(), localBytes, remoteBytes)
 	this.mu.Lock()
 	this.localBytes += localBytes
 	this.remoteBytes += remoteBytes

@@ -2,6 +2,7 @@ package fluidbackup
 
 import "sync"
 import "math/rand"
+import "time"
 
 type PeerRequest struct {
 	Bytes int
@@ -24,6 +25,7 @@ func MakePeerList(protocol *Protocol) *PeerList {
 	go func() {
 		for {
 			this.update()
+			time.Sleep(time.Duration(50 * time.Millisecond))
 		}
 	}()
 
@@ -74,9 +76,14 @@ func (this *PeerList) update() {
 	// handle last failed request if set
 	if this.lastRequest != nil {
 		request := *this.lastRequest
-		this.lastRequest = nil
 		this.mu.Unlock()
 		this.createAgreementSatisfying(request)
+
+		// reset last request
+		// we do this after createAgreementSatisfying so that we guarantee earlier requests aren't re-satisfied
+		this.mu.Lock()
+		this.lastRequest = nil
+		this.mu.Unlock()
 		return
 	}
 
