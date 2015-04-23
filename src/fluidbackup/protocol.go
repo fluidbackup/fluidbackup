@@ -2,24 +2,29 @@ package fluidbackup
 
 import "net"
 import "net/rpc"
-import "net/http"
-import "strconv"
+import "fmt"
 
 type Protocol struct {
 	peerList *PeerList
+	rpc *rpc.Server
 }
 
-func MakeProtocol() *Protocol {
+func MakeProtocol(port int) *Protocol {
 	this := new(Protocol)
 
-	rpc.Register(this)
-	rpc.HandleHTTP()
-	l, e := net.Listen("tcp", ":19898")
+	this.rpc = rpc.NewServer()
+	this.rpc.Register(this)
+	l, e := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if e != nil {
 		Log.Error.Printf("Error while initializing RPC handler: %s", e.Error())
 		return nil
 	}
-	go http.Serve(l, nil)
+	go func() {
+		for {
+			conn, _ := l.Accept()
+			go rpc.ServeConn(conn)
+		}
+	}()
 
 	return this
 }
@@ -76,7 +81,7 @@ func (this *Protocol) getMe() PeerId {
 }
 
 func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply interface{}) bool {
-	c, errx := rpc.DialHTTP("tcp", peerId.Address + ":" + strconv.Itoa(peerId.Port))
+	c, errx := rpc.DialHTTP("tcp", fmt.Sprintf("%s:%d", peerId.Address, peerId.Port))
 	if errx != nil {
 		return false
 	}
