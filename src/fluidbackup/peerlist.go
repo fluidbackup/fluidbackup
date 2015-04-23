@@ -30,6 +30,22 @@ func MakePeerList(protocol *Protocol) *PeerList {
 	return this
 }
 
+func (this *PeerList) DiscoveredPeer(peerId PeerId) *Peer {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.discoveredPeer(peerId)
+}
+
+func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
+	peer, ok := this.peers[peerId]
+	if !ok {
+		Log.Info.Printf("Registering newly discovered peer at %s:%d", peerId.Address, peerId.Port)
+		peer := MakePeer(peerId, this.protocol)
+		this.peers[peerId] = peer
+	}
+	return peer
+}
+
 /*
  * Attempts to identify an available peer.
  * Caller requires [bytes] free bytes to use and doesn't want the peer to be in [ignorePeers] list.
@@ -100,11 +116,7 @@ func (this *PeerList) HandleProposeAgreement(peerId PeerId, localBytes int, remo
 	// ...
 
 	// okay, we've accepted the proposal
-	peer, ok := this.peers[peerId]
-	if !ok {
-		peer := MakePeer(peerId, this.protocol)
-		this.peers[peerId] = peer
-	}
+	peer := this.discoveredPeer(peerId)
 	peer.eventAgreement(localBytes, remoteBytes)
 
 	return true

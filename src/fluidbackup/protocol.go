@@ -24,6 +24,14 @@ func MakeProtocol() *Protocol {
 	return this
 }
 
+type PingArgs struct {
+	Me PeerId
+}
+
+type PingReply struct {
+
+}
+
 type ProposeAgreementArgs struct {
 	Me PeerId
 	MyBytes int
@@ -83,6 +91,13 @@ func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply int
 	return false
 }
 
+func (this *Protocol) ping(peerId PeerId) bool {
+	args := &PingArgs{Me: this.getMe()}
+	var reply PingReply
+	success := this.call(peerId, "Ping", args, &reply)
+	return success
+}
+
 func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteBytes int) bool {
 	args := &ProposeAgreementArgs{
 		Me: this.getMe(),
@@ -103,6 +118,10 @@ func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool 
 	var reply StoreShardReply
 	success := this.call(peerId, "StoreShard", args, &reply)
 	return success && reply.Confirm
+}
+
+func (this *Protocol) HandlePing(args *PingArgs, reply *PingReply) error {
+	return nil
 }
 
 func (this *Protocol) HandleProposeAgreement(args *ProposeAgreementArgs, reply *ProposeAgreementReply) error {

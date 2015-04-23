@@ -3,6 +3,8 @@ package fluidbackup
 import "sync"
 import "fmt"
 import "io/ioutil"
+import "time"
+import "math/rand"
 
 const (
 	STATUS_ONLINE = 0
@@ -32,6 +34,17 @@ func MakePeer(id PeerId, protocol *Protocol) *Peer {
 	this.protocol = protocol
 	this.id = id
 	this.status = STATUS_ONLINE
+
+	go func() {
+		this.update()
+
+		if Debug {
+			time.Sleep(time.Duration(rand.Intn(3000)) * time.Millisecond + 3 * time.Second)
+		} else {
+			time.Sleep(time.Duration(rand.Intn(60000)) * time.Millisecond + 30 * time.Second)
+		}
+	}()
+
 	return this
 }
 
@@ -100,4 +113,18 @@ func (this *Peer) isOnline() bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.status == STATUS_ONLINE
+}
+
+func (this *Peer) update() {
+	online := this.protocol.ping(this.id)
+
+	this.mu.Lock()
+	if online && this.status == STATUS_OFFLINE {
+		Log.Info.Printf("Peer %s:%d came online", this.id.Address, this.id.Port)
+		this.status = STATUS_ONLINE
+	} else if !online && this.status == STATUS_ONLINE {
+		Log.Info.Printf("Peer %s:%d went offline", this.id.Address, this.id.Port)
+		this.status = STATUS_OFFLINE
+	}
+	this.mu.Unlock()
 }
