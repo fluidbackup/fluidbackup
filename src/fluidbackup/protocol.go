@@ -57,6 +57,10 @@ type StoreShardReply struct {
 	Confirm bool
 }
 
+func (this *Protocol) setPeerList(peerList *PeerList) {
+	this.peerList = peerList
+}
+
 func (this *Protocol) getMe() PeerId {
 	ifaces, err := net.Interfaces()
 
