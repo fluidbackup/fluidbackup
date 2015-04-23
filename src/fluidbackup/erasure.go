@@ -9,8 +9,11 @@ import "github.com/somethingnew2-0/go-erasure"
  */
 func erasureEncode(data []byte, k int, n int) [][]byte {
 	shardLen := len(data) / k
-	code := erasure.NewCode(n, k, len(data))
-	encodedBlob := code.Encode(data)
+	var encodedBlob []byte
+	if n > k {
+		code := erasure.NewCode(n, k, len(data))
+		encodedBlob = code.Encode(data)
+	}
 
 	shards := make([][]byte, n)
 	for i := 0; i < n; i++ {
@@ -32,27 +35,44 @@ func erasureEncode(data []byte, k int, n int) [][]byte {
  */
 func erasureDecode(shards [][]byte, k int, n int, chunks []int) []byte {
 	shardLen := len(shards[0])
-	code := erasure.NewCode(n, k, shardLen * k)
 
-	encodedBlob := make([]byte, 0, shardLen * n)
-	errList := make([]byte, 0)
-	zeros := make([]byte, shardLen)
+	if n > k {
+		code := erasure.NewCode(n, k, shardLen * k)
 
-	for i := 0; i < n; i++ {
-		// use the code shard from code parameter if set in chunks, otherwise fill with zeroes
-		found := false
-		for codeIndex, shardIndex := range chunks {
-			if shardIndex == i {
-				encodedBlob = append(encodedBlob, shards[codeIndex]...)
-				found = true
+		encodedBlob := make([]byte, 0, shardLen * n)
+		errList := make([]byte, 0)
+		zeros := make([]byte, shardLen)
+
+		for i := 0; i < n; i++ {
+			// use the code shard from code parameter if set in chunks, otherwise fill with zeroes
+			found := false
+			for codeIndex, shardIndex := range chunks {
+				if shardIndex == i {
+					encodedBlob = append(encodedBlob, shards[codeIndex]...)
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				encodedBlob = append(encodedBlob, zeros...)
+				errList = append(errList, byte(i))
 			}
 		}
 
-		if !found {
-			encodedBlob = append(encodedBlob, zeros...)
-			errList = append(errList, byte(i))
-		}
-	}
+		return code.Decode(encodedBlob, errList, false)
+	} else {
+		data := make([]byte, 0, shardLen * k)
 
-	return code.Decode(encodedBlob, errList, false)
+		for i := 0; i < k; i++ {
+			for codeIndex, shardIndex := range chunks {
+				if shardIndex == i {
+					data = append(data, shards[codeIndex]...)
+					break
+				}
+			}
+		}
+
+		return data
+	}
 }

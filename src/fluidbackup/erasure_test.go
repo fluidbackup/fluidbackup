@@ -4,9 +4,7 @@ import "testing"
 import "bytes"
 import "math/rand"
 
-func TestEncodeDecode(t *testing.T) {
-	k := 12
-	n := 16
+func EncodeDecode(t *testing.T, k int, n int) {
 	shardLength := 64
 	size := k * shardLength
 
@@ -37,4 +35,12 @@ func TestEncodeDecode(t *testing.T) {
 	if !bytes.Equal(original, recoveredBytes) {
 		t.Error("recovered data does not match original")
 	}
+}
+
+func TestEncodeDecodeTrivial(t *testing.T) {
+	EncodeDecode(t, 3, 3)
+}
+
+func TestEncodeDecodeActual(t *testing.T) {
+	EncodeDecode(t, 12, 16)
 }
