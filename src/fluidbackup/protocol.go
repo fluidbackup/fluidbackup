@@ -7,10 +7,12 @@ import "fmt"
 type Protocol struct {
 	peerList *PeerList
 	rpc *rpc.Server
+	port int
 }
 
 func MakeProtocol(port int) *Protocol {
 	this := new(Protocol)
+	this.port = port
 
 	this.rpc = rpc.NewServer()
 	this.rpc.Register(this)
@@ -22,7 +24,7 @@ func MakeProtocol(port int) *Protocol {
 	go func() {
 		for {
 			conn, _ := l.Accept()
-			go rpc.ServeConn(conn)
+			this.rpc.ServeConn(conn)
 		}
 	}()
 
@@ -75,17 +77,17 @@ func (this *Protocol) getMe() PeerId {
 			for _, addr := range addrs {
 				switch addr.(type) {
 				case *net.IPAddr:
-					return PeerId{Address: addr.String(), Port: 19898}
+					return PeerId{Address: addr.String(), Port: this.port}
 				}
 			}
 		}
 	}
 
-	return PeerId{Address: "127.0.0.1", Port: 19898}
+	return PeerId{Address: "127.0.0.1", Port: this.port}
 }
 
 func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply interface{}) bool {
-	c, errx := rpc.DialHTTP("tcp", fmt.Sprintf("%s:%d", peerId.Address, peerId.Port))
+	c, errx := rpc.Dial("tcp", peerId.String())
 	if errx != nil {
 		return false
 	}
@@ -101,9 +103,11 @@ func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply int
 }
 
 func (this *Protocol) ping(peerId PeerId) bool {
+	Log.Debug.Printf("Pinging %s", peerId.String())
 	args := &PingArgs{Me: this.getMe()}
 	var reply PingReply
 	success := this.call(peerId, "Ping", args, &reply)
+	Log.Debug.Printf("Pong from %s: %t", peerId.String(), success)
 	return success
 }
 

@@ -87,6 +87,7 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 	}
 
 	this.blocks[block.Id] = block
+	Log.Debug.Printf("Registered new block %d with %d shards", block.Id, len(block.Shards))
 	return block
 }
 
@@ -125,6 +126,7 @@ func (this *BlockStore) update() {
 	for _, block := range this.blocks {
 		for _, shard := range block.Shards {
 			if shard.Peer != nil && !shard.Available {
+				Log.Debug.Printf("Committing shard %d to peer %s", shard.Id, shard.Peer.id.String())
 				if shard.Peer.storeShard(shard) {
 					shard.Available = true
 					shard.Contents = nil

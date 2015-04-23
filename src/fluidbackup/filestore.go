@@ -40,10 +40,11 @@ func (this *FileStore) RegisterFile(path string) *File {
 		return nil
 	}
 
+	Log.Info.Printf("Registering new file [%s]", path)
 	f, err := os.Open(path)
 
 	if err != nil {
-		Log.Warn.Printf("Error encountered while registering file [%s]: %s\n", path, err.Error())
+		Log.Warn.Printf("Error encountered while registering file [%s]: %s", path, err.Error())
 		return nil
 	}
 
@@ -58,7 +59,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 		readCount, err := f.Read(buf)
 
 		if err != nil {
-			Log.Warn.Printf("Error encountered while registering file [%s]: %s\n", path, err.Error())
+			Log.Warn.Printf("Error encountered while registering file [%s]: %s", path, err.Error())
 			return nil
 		}
 
@@ -67,7 +68,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 		file.Length += readCount
 
 		if block == nil {
-			Log.Warn.Printf("Failed to create block while registering file [%s]\n", path)
+			Log.Warn.Printf("Failed to create block while registering file [%s]", path)
 			return nil
 		}
 
@@ -81,7 +82,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 	file.Hash = hasher.Sum(nil)
 
 	// update files structure
-	Log.Info.Printf("Registered new file from [%s]\n", path)
+	Log.Info.Printf("Registered new file from [%s]", path)
 	this.files[path] = file
 	return file
 }

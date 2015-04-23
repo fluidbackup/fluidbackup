@@ -39,7 +39,7 @@ func (this *PeerList) DiscoveredPeer(peerId PeerId) *Peer {
 func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 	peer, ok := this.peers[peerId]
 	if !ok {
-		Log.Info.Printf("Registering newly discovered peer at %s:%d", peerId.Address, peerId.Port)
+		Log.Info.Printf("Registering newly discovered peer at %s", peerId.String())
 		peer := MakePeer(peerId, this.protocol)
 		this.peers[peerId] = peer
 	}

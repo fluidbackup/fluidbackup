@@ -16,6 +16,10 @@ type PeerId struct {
 	Port int
 }
 
+func (this *PeerId) String() string {
+	return fmt.Sprintf("%s:%d", this.Address, this.Port)
+}
+
 type Peer struct {
 	mu sync.Mutex
 	protocol *Protocol
@@ -85,7 +89,7 @@ func (this *Peer) reserveBytes(bytes int) bool {
 }
 
 func (this *Peer) getShardPath(label int64) string {
-	return fmt.Sprintf("store/%s:%d_%d.obj", this.id.Address, this.id.Port, label)
+	return fmt.Sprintf("store/%s_%d.obj", this.id.String(), label)
 }
 
 func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
@@ -101,7 +105,7 @@ func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
 	err := ioutil.WriteFile(this.getShardPath(label), bytes, 0644)
 
 	if err != nil {
-		Log.Warn.Printf("Failed to write peer shard (%s:%d #%d): %s\n", this.id.Address, this.id.Port, label, err.Error())
+		Log.Warn.Printf("Failed to write peer shard (%s #%d): %s", this.id.String(), label, err.Error())
 		return false
 	}
 
@@ -120,10 +124,10 @@ func (this *Peer) update() {
 
 	this.mu.Lock()
 	if online && this.status == STATUS_OFFLINE {
-		Log.Info.Printf("Peer %s:%d came online", this.id.Address, this.id.Port)
+		Log.Info.Printf("Peer %s came online", this.id.String())
 		this.status = STATUS_ONLINE
 	} else if !online && this.status == STATUS_ONLINE {
-		Log.Info.Printf("Peer %s:%d went offline", this.id.Address, this.id.Port)
+		Log.Info.Printf("Peer %s went offline", this.id.String())
 		this.status = STATUS_OFFLINE
 	}
 	this.mu.Unlock()
