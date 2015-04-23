@@ -36,7 +36,7 @@ type ProposeAgreementReply struct {
 
 type StoreShardArgs struct {
 	Me PeerId
-	Label string
+	Label int64
 	Bytes []byte
 }
 
@@ -94,7 +94,7 @@ func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteByte
 	return success && reply.Accept
 }
 
-func (this *Protocol) storeShard(peerId PeerId, label string, bytes []byte) bool {
+func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool {
 	args := &StoreShardArgs{
 		Me: this.getMe(),
 		Label: label,
@@ -110,6 +110,16 @@ func (this *Protocol) HandleProposeAgreement(args *ProposeAgreementArgs, reply *
 		reply.Accept = false
 	} else {
 		reply.Accept = this.peerList.HandleProposeAgreement(args.Me, args.YourBytes, args.MyBytes)
+	}
+
+	return nil
+}
+
+func (this *Protocol) HandleStoresShard(args *StoreShardArgs, reply *StoreShardReply) error {
+	if this.peerList == nil {
+		reply.Confirm = false
+	} else {
+		reply.Confirm = this.peerList.HandleStoreShard(args.Me, args.Label, args.Bytes)
 	}
 
 	return nil

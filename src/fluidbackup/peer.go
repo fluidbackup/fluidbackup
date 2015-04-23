@@ -1,7 +1,8 @@
 package fluidbackup
 
 import "sync"
-import "strconv"
+import "fmt"
+import "io/ioutil"
 
 const (
 	STATUS_ONLINE = 0
@@ -51,7 +52,7 @@ func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
 }
 
 func (this *Peer) storeShard(shard *BlockShard) bool {
-	return this.protocol.storeShard(this.id, string(shard.Parent.Id) + "_" + strconv.Itoa(shard.ShardIndex), shard.Contents)
+	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
 }
 
 /*
@@ -68,6 +69,31 @@ func (this *Peer) reserveBytes(bytes int) bool {
 	} else {
 		return false
 	}
+}
+
+func (this *Peer) getShardPath(label int64) string {
+	return fmt.Sprintf("store/%s:%d_%d.obj", this.id.Address, this.id.Port, label)
+}
+
+func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	// confirm the peer still has space on our storage to reserve
+	if this.remoteBytes < this.remoteUsedBytes + len(bytes) {
+		return false
+	}
+
+	// okay, store it in the file and update cached usage
+	err := ioutil.WriteFile(this.getShardPath(label), bytes, 0644)
+
+	if err != nil {
+		Log.Warn.Printf("Failed to write peer shard (%s:%d #%d): %s\n", this.id.Address, this.id.Port, label, err.Error())
+		return false
+	}
+
+	this.remoteUsedBytes += len(bytes)
+	return true
 }
 
 func (this *Peer) isOnline() bool {

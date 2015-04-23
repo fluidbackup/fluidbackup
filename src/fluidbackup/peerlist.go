@@ -109,3 +109,15 @@ func (this *PeerList) HandleProposeAgreement(peerId PeerId, localBytes int, remo
 
 	return true
 }
+
+func (this *PeerList) HandleStoreShard(peerId PeerId, label int64, bytes []byte) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	peer, ok := this.peers[peerId]
+	if !ok {
+		return false
+	}
+
+	return peer.eventStoreShard(label, bytes)
+}

@@ -2,11 +2,16 @@ package fluidbackup
 
 import "crypto/sha1"
 import "sync"
+import "math/rand"
+
+type BlockId int64
+type BlockShardId int64
 
 /*
  * BlockShard represents a slice of a file block.
  */
 type BlockShard struct {
+	Id BlockShardId
 	Hash []byte
 	Peer *Peer
 	Available bool // whether the peer has confirmed receipt of the shard
@@ -17,8 +22,6 @@ type BlockShard struct {
 	// temporary fields
 	Contents []byte // cleared once the peer confirms receipt of the shard
 }
-
-type BlockId string
 
 /*
  * Blocks are the unit of distribution.
@@ -41,13 +44,13 @@ type Block struct {
 type BlockStore struct {
 	mu sync.Mutex
 	peerList *PeerList
-	blocks []*Block
+	blocks map[BlockId]*Block
 }
 
 func MakeBlockStore(peerList *PeerList) *BlockStore {
 	this := new(BlockStore)
 	this.peerList = peerList
-	this.blocks = make([]*Block, 0)
+	this.blocks = make(map[BlockId]*Block, 0)
 
 	go func() {
 		this.update()
@@ -61,7 +64,7 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 	defer this.mu.Unlock()
 
 	block := &Block{}
-	block.Id = BlockId(randSeq(16))
+	block.Id = BlockId(rand.Int63())
 	block.N = DEFAULT_N
 	block.K = DEFAULT_K
 	block.ParentFile = path
@@ -73,6 +76,7 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 
 	for shardIndex, shardBytes := range shards {
 		block.Shards[shardIndex] = &BlockShard{
+			Id: BlockShardId(rand.Int63()),
 			Hash: sha1.New().Sum(shardBytes),
 			Peer: nil,
 			Available: false,
@@ -82,7 +86,7 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 		}
 	}
 
-	this.blocks = append(this.blocks, block)
+	this.blocks[block.Id] = block
 	return block
 }
 
