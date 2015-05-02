@@ -83,13 +83,13 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 	block.Shards = make([]*BlockShard, block.N)
 
 	for shardIndex, shardBytes := range shards {
-		block.Shards[shardIndex] = &BlockShard{#
+		block.Shards[shardIndex] = &BlockShard{
 			Id:         BlockShardId(rand.Int63()),
 			Hash:       hash(shardBytes),
 			Peer:       nil,
 			Available:  false,
 			Contents:   shardBytes,
-			Parent:     block,#
+			Parent:     block,
 			ShardIndex: shardIndex,
 		}
 	}
