@@ -86,3 +86,48 @@ func (this *FileStore) RegisterFile(path string) *File {
 	this.files[path] = file
 	return file
 }
+
+func (this *FileStore) RecoverFile(path string) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	// make sure file exists
+	file := this.files[path]
+	if file == nil {
+		return false
+	}
+
+	// recover file block by block
+	Log.Info.Printf("Recovering file [%s]", path)
+	fout, err := os.Create(path)
+	if err != nil {
+		Log.Warn.Printf("Error encountered while opening file in write mode for recovery [%s]: %s", path, err.Error())
+		return false
+	}
+
+	defer fout.Close()
+	numWritten := 0
+
+	for _, block := range file.Blocks {
+		blockBytes := this.blockStore.RecoverBlock(block)
+
+		if blockBytes == nil {
+			return false
+		}
+
+		if numWritten + len(blockBytes) > file.Length {
+			blockBytes = blockBytes[:file.Length - numWritten]
+		}
+
+		_, err := fout.Write(blockBytes)
+
+		if err != nil {
+			Log.Warn.Printf("Error encountered while writing to file during recovery [%s]: %s", path, err.Error())
+			return false
+		}
+
+		numWritten += len(blockBytes)
+	}
+
+	return true
+}

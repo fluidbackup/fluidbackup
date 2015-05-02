@@ -1,9 +1,9 @@
 package fluidbackup
 
-import "crypto/sha1"
 import "sync"
 import "math/rand"
 import "time"
+import "bytes"
 
 type BlockId int64
 type BlockShardId int64
@@ -46,12 +46,15 @@ type BlockStore struct {
 	mu sync.Mutex
 	peerList *PeerList
 	blocks map[BlockId]*Block
+	replicateN, replicateK int
 }
 
 func MakeBlockStore(peerList *PeerList) *BlockStore {
 	this := new(BlockStore)
 	this.peerList = peerList
 	this.blocks = make(map[BlockId]*Block, 0)
+	this.replicateN = DEFAULT_N
+	this.replicateK = DEFAULT_K
 
 	go func() {
 		for {
@@ -69,11 +72,11 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 
 	block := &Block{}
 	block.Id = BlockId(rand.Int63())
-	block.N = DEFAULT_N
-	block.K = DEFAULT_K
+	block.N = this.replicateN
+	block.K = this.replicateK
 	block.ParentFile = path
 	block.FileOffset = offset
-	block.Hash = sha1.New().Sum(contents)
+	block.Hash = hash(contents)
 
 	shards := erasureEncode(contents, block.K, block.N)
 	block.Shards = make([]*BlockShard, block.N)
@@ -81,7 +84,7 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 	for shardIndex, shardBytes := range shards {
 		block.Shards[shardIndex] = &BlockShard{
 			Id: BlockShardId(rand.Int63()),
-			Hash: sha1.New().Sum(shardBytes),
+			Hash: hash(shardBytes),
 			Peer: nil,
 			Available: false,
 			Contents: shardBytes,
@@ -93,6 +96,58 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 	this.blocks[block.Id] = block
 	Log.Debug.Printf("Registered new block %d with %d shards", block.Id, len(block.Shards))
 	return block
+}
+
+func (this *BlockStore) RecoverBlock(block *Block) []byte {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	Log.Debug.Printf("Begin recovery of block %d", block.Id)
+	shardBytes := make([][]byte, 0, block.K)
+	shardChunks := make([]int, 0, block.K)
+
+	for shardIndex, shard := range block.Shards {
+		if shard.Peer == nil || !shard.Available {
+			Log.Debug.Printf("Skipping shard %d: no peer or not available", shard.Id)
+			continue
+		}
+
+		Log.Debug.Printf("Attempting to retrieve shard %d from peer %s", shard.Id, shard.Peer.id.String())
+		currBytes := shard.Peer.retrieveShard(shard)
+
+		if currBytes == nil {
+			Log.Warn.Printf("Failed to retrieve shard %d from peer %s (empty response)", shard.Id, shard.Peer.id.String())
+			continue
+		}
+
+		if bytes.Equal(hash(currBytes), shard.Hash) {
+			Log.Debug.Printf("Retrieved shard %d successfully (idx=%d, len=%d)", shard.Id, shardIndex, len(currBytes))
+			shardBytes = append(shardBytes, currBytes)
+			shardChunks = append(shardChunks, shardIndex)
+
+			if len(shardBytes) >= block.K {
+				break
+			}
+		} else {
+			Log.Warn.Printf("Failed to retrieve shard %d from peer %s (hash check failed, len=%d)", shard.Id, shard.Peer.id.String(), len(currBytes))
+			continue
+		}
+	}
+
+	if len(shardBytes) < block.K {
+		Log.Warn.Printf("Failed to retrieve block %d: only got %d shards", block.Id, len(shardBytes))
+		return nil
+	}
+
+	blockBytes := erasureDecode(shardBytes, block.K, block.N, shardChunks)
+
+	if !bytes.Equal(hash(blockBytes), block.Hash) {
+		Log.Error.Printf("Failed to recover block %d: hash check failed even though we retrieved K shards", block.Id)
+		return nil
+	}
+
+	Log.Debug.Printf("Successfully recovered block %d", block.Id)
+	return blockBytes
 }
 
 func (this *BlockStore) update() {

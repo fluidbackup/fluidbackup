@@ -59,6 +59,15 @@ type StoreShardReply struct {
 	Confirm bool
 }
 
+type RetrieveShardArgs struct {
+	Me PeerId
+	Label int64
+}
+
+type RetrieveShardReply struct {
+	Bytes []byte
+}
+
 func (this *Protocol) setPeerList(peerList *PeerList) {
 	this.peerList = peerList
 }
@@ -133,7 +142,24 @@ func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool 
 	return success && reply.Confirm
 }
 
+func (this *Protocol) retrieveShard(peerId PeerId, label int64) []byte {
+	args := &RetrieveShardArgs {
+		Me: this.getMe(),
+		Label: label,
+	}
+	var reply RetrieveShardReply
+	success := this.call(peerId, "RetrieveShard", args, &reply)
+	if !success {
+		return nil
+	} else {
+		return reply.Bytes
+	}
+}
+
 func (this *Protocol) HandlePing(args *PingArgs, reply *PingReply) error {
+	if this.peerList != nil {
+		this.peerList.DiscoveredPeer(args.Me)
+	}
 	return nil
 }
 
@@ -152,6 +178,16 @@ func (this *Protocol) HandleStoreShard(args *StoreShardArgs, reply *StoreShardRe
 		reply.Confirm = false
 	} else {
 		reply.Confirm = this.peerList.HandleStoreShard(args.Me, args.Label, args.Bytes)
+	}
+
+	return nil
+}
+
+func (this *Protocol) HandleRetrieveShard(args *RetrieveShardArgs, reply *RetrieveShardReply) error {
+	if this.peerList == nil {
+		reply.Bytes = nil
+	} else {
+		reply.Bytes = this.peerList.HandleRetrieveShard(args.Me, args.Label)
 	}
 
 	return nil

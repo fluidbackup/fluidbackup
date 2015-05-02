@@ -6,6 +6,7 @@ import "github.com/somethingnew2-0/go-erasure"
  * erasureEncode converts a given block of data into N code shards each of size len(data)/K,
  *  such that the block can be recovered with any K of the code shards.
  * This operation may not work correctly in conjuction with erasureDecode if len(data) is not divisible by K.
+ * We also guarantee the return will not share memory with the parameters.
  */
 func erasureEncode(data []byte, k int, n int) [][]byte {
 	shardLen := len(data) / k
@@ -18,8 +19,11 @@ func erasureEncode(data []byte, k int, n int) [][]byte {
 	shards := make([][]byte, n)
 	for i := 0; i < n; i++ {
 		if i < k {
-			shards[i] = data[i * shardLen : (i+1) * shardLen]
+			// make a copy, don't want it to change if caller modifies data
+			shards[i] = make([]byte, shardLen)
+			copy(shards[i], data[i * shardLen : (i+1) * shardLen])
 		} else {
+			// make a copy, don't want it to change if caller modifies data
 			shards[i] = encodedBlob[(i-k) * shardLen : (i-k+1) * shardLen]
 		}
 	}

@@ -1,6 +1,7 @@
 package fluidbackup
 
 import "math/rand"
+import "crypto/sha1"
 
 /**
  * Contains mechanisms for server communication,
@@ -18,4 +19,9 @@ func randSeq(n int) string {
         b[i] = letters[rand.Intn(len(letters))]
     }
     return string(b)
+}
+
+func hash(b []byte) []byte {
+	hashArray := sha1.Sum(b)
+	return hashArray[:]
 }

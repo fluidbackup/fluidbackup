@@ -42,7 +42,7 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 	peer, ok := this.peers[peerId]
 	if !ok {
 		Log.Info.Printf("Registering newly discovered peer at %s", peerId.String())
-		peer := MakePeer(peerId, this.protocol)
+		peer = MakePeer(peerId, this.protocol)
 		this.peers[peerId] = peer
 	}
 	return peer
@@ -139,4 +139,15 @@ func (this *PeerList) HandleStoreShard(peerId PeerId, label int64, bytes []byte)
 	}
 
 	return peer.eventStoreShard(label, bytes)
+}
+
+func (this *PeerList) HandleRetrieveShard(peerId PeerId, label int64) []byte {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	peer, ok := this.peers[peerId]
+	if !ok {
+		return nil
+	}
+	return peer.eventRetrieveShard(label)
 }

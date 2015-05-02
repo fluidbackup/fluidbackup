@@ -75,6 +75,10 @@ func (this *Peer) storeShard(shard *BlockShard) bool {
 	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
 }
 
+func (this *Peer) retrieveShard(shard *BlockShard) []byte {
+	return this.protocol.retrieveShard(this.id, int64(shard.Id))
+}
+
 /*
  * Attempts to reserve a number of bytes for storage on this peer.
  * Returns true if the bytes have been reserved for use by caller, or false if reservation failed.
@@ -114,6 +118,20 @@ func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
 
 	this.remoteUsedBytes += len(bytes)
 	return true
+}
+
+func (this *Peer) eventRetrieveShard(label int64) []byte {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	shardBytes, err := ioutil.ReadFile(this.getShardPath(label))
+
+	if err != nil {
+		Log.Warn.Printf("Failed to handle shard retrieval request (%s #%d): %s", this.id.String(), label, err.Error())
+		return nil
+	} else {
+		return shardBytes
+	}
 }
 
 func (this *Peer) isOnline() bool {
