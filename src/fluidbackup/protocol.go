@@ -4,10 +4,13 @@ import "net"
 import "net/rpc"
 import "fmt"
 
+/*
+ * Local module for communication with peers.
+ */
 type Protocol struct {
 	peerList *PeerList
-	rpc *rpc.Server
-	port int
+	rpc      *rpc.Server
+	port     int
 }
 
 func MakeProtocol(port int) *Protocol {
@@ -36,12 +39,11 @@ type PingArgs struct {
 }
 
 type PingReply struct {
-
 }
 
 type ProposeAgreementArgs struct {
-	Me PeerId
-	MyBytes int
+	Me        PeerId
+	MyBytes   int
 	YourBytes int
 }
 
@@ -50,7 +52,7 @@ type ProposeAgreementReply struct {
 }
 
 type StoreShardArgs struct {
-	Me PeerId
+	Me    PeerId
 	Label int64
 	Bytes []byte
 }
@@ -93,7 +95,7 @@ func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply int
 	}
 	defer c.Close()
 
-	err := c.Call("Protocol.Handle" + fn, args, reply)
+	err := c.Call("Protocol.Handle"+fn, args, reply)
 	if err == nil {
 		return true
 	}
@@ -112,8 +114,8 @@ func (this *Protocol) ping(peerId PeerId) bool {
 
 func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteBytes int) bool {
 	args := &ProposeAgreementArgs{
-		Me: this.getMe(),
-		MyBytes: localBytes,
+		Me:        this.getMe(),
+		MyBytes:   localBytes,
 		YourBytes: remoteBytes,
 	}
 	var reply ProposeAgreementReply
@@ -124,7 +126,7 @@ func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteByte
 
 func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool {
 	args := &StoreShardArgs{
-		Me: this.getMe(),
+		Me:    this.getMe(),
 		Label: label,
 		Bytes: bytes,
 	}

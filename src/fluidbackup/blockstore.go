@@ -12,12 +12,12 @@ type BlockShardId int64
  * BlockShard represents a slice of a file block.
  */
 type BlockShard struct {
-	Id BlockShardId
-	Hash []byte
-	Peer *Peer
+	Id        BlockShardId
+	Hash      []byte
+	Peer      *Peer
 	Available bool // whether the peer has confirmed receipt of the shard
 
-	Parent *Block
+	Parent     *Block
 	ShardIndex int
 
 	// temporary fields
@@ -31,10 +31,10 @@ type BlockShard struct {
  *  N shards.
  */
 type Block struct {
-	Id BlockId
-	Hash []byte
-	N int
-	K int
+	Id     BlockId
+	Hash   []byte
+	N      int
+	K      int
 	Shards []*BlockShard
 
 	// source
@@ -43,9 +43,9 @@ type Block struct {
 }
 
 type BlockStore struct {
-	mu sync.Mutex
+	mu       sync.Mutex
 	peerList *PeerList
-	blocks map[BlockId]*Block
+	blocks   map[BlockId]*Block
 }
 
 func MakeBlockStore(peerList *PeerList) *BlockStore {
@@ -53,6 +53,7 @@ func MakeBlockStore(peerList *PeerList) *BlockStore {
 	this.peerList = peerList
 	this.blocks = make(map[BlockId]*Block, 0)
 
+	// perpetually ensure blocks are synced
 	go func() {
 		for {
 			this.update()
@@ -80,12 +81,12 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 
 	for shardIndex, shardBytes := range shards {
 		block.Shards[shardIndex] = &BlockShard{
-			Id: BlockShardId(rand.Int63()),
-			Hash: sha1.New().Sum(shardBytes),
-			Peer: nil,
-			Available: false,
-			Contents: shardBytes,
-			Parent: block,
+			Id:         BlockShardId(rand.Int63()),
+			Hash:       sha1.New().Sum(shardBytes),
+			Peer:       nil,
+			Available:  false,
+			Contents:   shardBytes,
+			Parent:     block,
 			ShardIndex: shardIndex,
 		}
 	}
