@@ -4,11 +4,16 @@ import "crypto/md5"
 import "os"
 import "sync"
 
+/*
+ * FileId includes the absolute pathname of the file object.
+ */
+type FileId string
+
 type File struct {
-	LocalPath string
+	Id FileId
 	Hash []byte
 	Length int
-	Blocks []*Block
+	Blocks []BlockId
 }
 
 /* Represents a data store provider. Is the entity that actually
@@ -16,13 +21,13 @@ stores information. */
 type FileStore struct {
 	mu sync.Mutex
 	blockStore *BlockStore
-	files map[string]*File // map from local filesystem path strings to file objects
+	files map[FileId]*File // map from local filesystem path strings to file objects
 }
 
 func MakeFileStore(blockStore *BlockStore) *FileStore {
 	this := new(FileStore)
 	this.blockStore = blockStore
-	this.files = make(map[string]*File)
+	this.files = make(map[FileId]*File)
 	return this
 }
 
@@ -35,7 +40,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 	defer this.mu.Unlock()
 
 	// make sure we don't already have a record of this file
-	_, alreadyHave := this.files[path]
+	_, alreadyHave := this.files[FileId(path)]
 	if alreadyHave {
 		return nil
 	}
@@ -51,8 +56,8 @@ func (this *FileStore) RegisterFile(path string) *File {
 	defer f.Close()
 	buf := make([]byte, FILE_BLOCK_SIZE)
 	file := &File{}
-	file.LocalPath = path
-	file.Blocks = make([]*Block, 0)
+	file.Id = FileId(path)
+	file.Blocks = make([]BlockId, 0)
 	hasher := md5.New()
 
 	for {
@@ -64,15 +69,9 @@ func (this *FileStore) RegisterFile(path string) *File {
 		}
 
 		hasher.Write(buf)
-		block := this.blockStore.RegisterBlock(path, file.Length, buf) // file.Length used as block's offset in parent file
+		blockId := this.blockStore.RegisterBlock(path, file.Length, buf) // file.Length used as block's offset in parent file
 		file.Length += readCount
-
-		if block == nil {
-			Log.Warn.Printf("Failed to create block while registering file [%s]", path)
-			return nil
-		}
-
-		file.Blocks = append(file.Blocks, block)
+		file.Blocks = append(file.Blocks, blockId)
 
 		if readCount < FILE_BLOCK_SIZE {
 			break
@@ -83,7 +82,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 
 	// update files structure
 	Log.Info.Printf("Registered new file from [%s]", path)
-	this.files[path] = file
+	this.files[FileId(path)] = file
 	return file
 }
 
@@ -92,7 +91,7 @@ func (this *FileStore) RecoverFile(path string) bool {
 	defer this.mu.Unlock()
 
 	// make sure file exists
-	file := this.files[path]
+	file := this.files[FileId(path)]
 	if file == nil {
 		return false
 	}
@@ -108,8 +107,8 @@ func (this *FileStore) RecoverFile(path string) bool {
 	defer fout.Close()
 	numWritten := 0
 
-	for _, block := range file.Blocks {
-		blockBytes := this.blockStore.RecoverBlock(block)
+	for _, blockId := range file.Blocks {
+		blockBytes := this.blockStore.RecoverBlock(blockId)
 
 		if blockBytes == nil {
 			return false

@@ -67,7 +67,7 @@ func MakeBlockStore(peerList *PeerList) *BlockStore {
 	return this
 }
 
-func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) *Block {
+func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) BlockId {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -96,13 +96,20 @@ func (this *BlockStore) RegisterBlock(path string, offset int, contents []byte) 
 
 	this.blocks[block.Id] = block
 	Log.Debug.Printf("Registered new block %d with %d shards", block.Id, len(block.Shards))
-	return block
+	return block.Id
 }
 
-func (this *BlockStore) RecoverBlock(block *Block) []byte {
+func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
+	// verify block exists
+	block := this.blocks[blockId]
+	if block == nil {
+		return nil
+	}
+
+	// recover the block
 	Log.Debug.Printf("Begin recovery of block %d", block.Id)
 	shardBytes := make([][]byte, 0, block.K)
 	shardChunks := make([]int, 0, block.K)
