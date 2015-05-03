@@ -48,11 +48,11 @@ func MakeFluidBackup(port int) *FluidBackup {
 }
 
 func (this *FluidBackup) Save() bool {
-	return this.fileStore.Save() && this.blockStore.Save()
+	return this.fileStore.Save() && this.blockStore.Save() && this.peerList.Save()
 }
 
 func (this *FluidBackup) Load() bool {
-	return this.blockStore.Load() && this.fileStore.Load()
+	return this.peerList.Load() && this.blockStore.Load() && this.fileStore.Load()
 }
 
 func (this *FluidBackup) Stop() {

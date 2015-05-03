@@ -3,6 +3,10 @@ package fluidbackup
 import "sync"
 import "math/rand"
 import "time"
+import "os"
+import "fmt"
+import "bufio"
+import "strings"
 
 type PeerRequest struct {
 	Bytes       int
@@ -167,4 +171,56 @@ func (this *PeerList) HandleRetrieveShard(peerId PeerId, label int64) []byte {
 		return nil
 	}
 	return peer.eventRetrieveShard(label)
+}
+
+/*
+ * Peer metadata can be written and read from the disk using Save/Load functions below.
+ * The file format is a peer on each line, consisting of string:
+ *     [peerid]\[localBytes]\[remoteBytes]
+ */
+
+func (this *PeerList) Save() bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	Log.Info.Printf("Saving peer data to peerlist.dat (%d peers)", len(this.peers))
+	fout, err := os.Create("peerlist.dat")
+	if err != nil {
+		Log.Warn.Printf("Failed to save peer data to peerlist.dat: %s", err.Error())
+		return false
+	}
+	defer fout.Close()
+
+	for _, peer := range this.peers {
+		fout.Write([]byte(fmt.Sprintf("%s\\%d\\%d\n", peer.id.String(), peer.localBytes, peer.remoteBytes)))
+	}
+
+	return true
+}
+
+func (this *PeerList) Load() bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	fin, err := os.Open("peerlist.dat")
+	if err != nil {
+		Log.Warn.Printf("Failed to read peer data from peerlist.dat: %s", err.Error())
+		return false
+	}
+	defer fin.Close()
+
+	scanner := bufio.NewScanner(fin)
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), "\\")
+
+		if len(parts) != 3 {
+			continue
+		}
+
+		peer := this.discoveredPeer(strToPeerId(parts[0]))
+		peer.localBytes = strToInt(parts[1])
+		peer.remoteBytes = strToInt(parts[2])
+	}
+
+	Log.Info.Printf("Loaded %d peers", len(this.peers))
+	return true
 }
