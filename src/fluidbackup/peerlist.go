@@ -5,18 +5,27 @@ import "math/rand"
 import "time"
 
 type PeerRequest struct {
-	Bytes int
+	Bytes       int
 	IgnorePeers map[PeerId]bool
 }
 
+/*
+ * Module maintaining a list of
+ * current peers involved in the distributed
+ * storage scheme, and operations involving
+ * all the peers (mainly storing files)
+ */
 type PeerList struct {
-	mu sync.Mutex
-	protocol *Protocol
-	peers map[PeerId]*Peer
+	mu          sync.Mutex
+	protocol    *Protocol
+	peers       map[PeerId]*Peer
 	lastRequest *PeerRequest
 	fluidBackup *FluidBackup
 }
 
+/*
+ * Constructor
+ */
 func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	this := new(PeerList)
 	this.fluidBackup = fluidBackup
@@ -34,6 +43,9 @@ func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	return this
 }
 
+/*
+ * Add a peer to the peerList. Handles duplicates.
+ */
 func (this *PeerList) DiscoveredPeer(peerId PeerId) *Peer {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -44,6 +56,7 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 	peer, ok := this.peers[peerId]
 	if !ok {
 		Log.Info.Printf("Registering newly discovered peer at %s", peerId.String())
+		// Make local representations of known remote peers.
 		peer = MakePeer(peerId, this.fluidBackup, this.protocol)
 		this.peers[peerId] = peer
 	}
@@ -109,6 +122,8 @@ func (this *PeerList) createAgreementSatisfying(request PeerRequest) {
 	}
 
 	randomPeer := possiblePeers[rand.Intn(len(possiblePeers))]
+	// Use our "remote peer handler" object to initiate
+	// agreement with the said remote peer.
 	randomPeer.proposeAgreement(request.Bytes, request.Bytes)
 }
 

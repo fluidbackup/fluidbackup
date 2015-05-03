@@ -8,13 +8,13 @@ import "math/rand"
 import "strings"
 
 const (
-	STATUS_ONLINE = 0
+	STATUS_ONLINE  = 0
 	STATUS_OFFLINE = 1
 )
 
 type PeerId struct {
 	Address string
-	Port int
+	Port    int
 }
 
 func (this *PeerId) String() string {
@@ -23,22 +23,31 @@ func (this *PeerId) String() string {
 
 func strToPeerId(str string) PeerId {
 	parts := strings.Split(str, ":")
-	return PeerId {
+	return PeerId{
 		Address: parts[0],
-		Port: strToInt(parts[1]),
+		Port:    strToInt(parts[1]),
 	}
 }
 
+/*
+ * Represents another peer, storing information about
+ * the other peer as necessary, and handling requests/actions
+ * involving that other peer (storeShard, etc.)
+ *
+ * Note: Does not represent the local peer. The local peer
+ * is perhaps best represented by a combination of Protocol,
+ * and PeerList, and FileStorage, which comprise a system.
+ */
 type Peer struct {
-	mu sync.Mutex
-	protocol *Protocol
-	id PeerId
-	status int
-	localBytes int // how many bytes we've agreed to store for this peer
+	mu          sync.Mutex
+	protocol    *Protocol
+	id          PeerId
+	status      int
+	localBytes  int // how many bytes we've agreed to store for this peer
 	remoteBytes int // how many bytes peer is willing to store for us
 
 	// cached values
-	localUsedBytes int
+	localUsedBytes  int
 	remoteUsedBytes int
 }
 
@@ -49,13 +58,14 @@ func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 	this.status = STATUS_ONLINE
 
 	go func() {
+		/* keep updating until eternity */
 		for !fluidBackup.Stopping() {
 			this.update()
 
 			if Debug {
-				time.Sleep(time.Duration(rand.Intn(3000)) * time.Millisecond + 3 * time.Second)
+				time.Sleep(time.Duration(rand.Intn(3000))*time.Millisecond + 3*time.Second)
 			} else {
-				time.Sleep(time.Duration(rand.Intn(60000)) * time.Millisecond + 30 * time.Second)
+				time.Sleep(time.Duration(rand.Intn(60000))*time.Millisecond + 30*time.Second)
 			}
 		}
 	}()
@@ -63,6 +73,10 @@ func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 	return this
 }
 
+/*
+ * Our represented peer wants to propose agreement
+ * with the local peer.
+ */
 func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 	if this.protocol.proposeAgreement(this.id, localBytes, remoteBytes) {
 		this.eventAgreement(localBytes, remoteBytes)
@@ -80,6 +94,10 @@ func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
 	this.mu.Unlock()
 }
 
+/*
+ * Our represented peer wants to store data on the local
+ * peer (forwarded by protocol)
+ */
 func (this *Peer) storeShard(shard *BlockShard) bool {
 	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
 }
@@ -96,7 +114,7 @@ func (this *Peer) reserveBytes(bytes int) bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	if this.remoteBytes - this.remoteUsedBytes >= bytes {
+	if this.remoteBytes-this.remoteUsedBytes >= bytes {
 		this.remoteUsedBytes += bytes
 		return true
 	} else {
@@ -105,15 +123,21 @@ func (this *Peer) reserveBytes(bytes int) bool {
 }
 
 func (this *Peer) getShardPath(label int64) string {
+	// todo: make the store directory automatically
 	return fmt.Sprintf("store/%s_%d.obj", this.id.String(), label)
 }
 
+/*
+ * called on a representation
+ * to say that the peer it represents is trying to
+ * store data on our peer
+ */
 func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
 	// confirm the peer still has space on our storage to reserve
-	if this.remoteBytes < this.remoteUsedBytes + len(bytes) {
+	if this.remoteBytes < this.remoteUsedBytes+len(bytes) {
 		return false
 	}
 
@@ -149,6 +173,11 @@ func (this *Peer) isOnline() bool {
 	return this.status == STATUS_ONLINE
 }
 
+/*
+ * Call as often as reasonable.
+ * Syncs this peer representation with the actual remote
+ * peer.
+ */
 func (this *Peer) update() {
 	online := this.protocol.ping(this.id)
 

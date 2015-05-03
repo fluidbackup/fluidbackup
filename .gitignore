@@ -26,3 +26,6 @@ _testmain.go
 # Sublime Stuff
 *.sublime-project
 *.sublime-workspace
+
+# Local Storage
+*.txt
