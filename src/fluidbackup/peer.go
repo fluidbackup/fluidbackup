@@ -137,7 +137,7 @@ func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
 	defer this.mu.Unlock()
 
 	// confirm the peer still has space on our storage to reserve
-	if this.remoteBytes < this.remoteUsedBytes+len(bytes) {
+	if this.localBytes < this.localUsedBytes+len(bytes) {
 		return false
 	}
 
