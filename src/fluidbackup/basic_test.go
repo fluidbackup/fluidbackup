@@ -50,6 +50,12 @@ func TestBasic(t *testing.T) {
 	if !bytes.Equal(fileContents, newFileContents) {
 		t.Error("recovered file does not match original")
 	}
+
+	// shut down fluidbackup instances
+	bMain.Stop()
+	for _, inst := range bOther {
+		inst.Stop()
+	}
 }
 
 func TestStable(t *testing.T) {
@@ -100,5 +106,11 @@ func TestStable(t *testing.T) {
 
 	if !bytes.Equal(fileContents, newFileContents) {
 		t.Error("recovered file does not match original")
+	}
+
+	// shut down fluidbackup instances
+	bMain.Stop()
+	for _, inst := range bOther {
+		inst.Stop()
 	}
 }
