@@ -14,16 +14,18 @@ type PeerList struct {
 	protocol *Protocol
 	peers map[PeerId]*Peer
 	lastRequest *PeerRequest
+	fluidBackup *FluidBackup
 }
 
-func MakePeerList(protocol *Protocol) *PeerList {
+func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	this := new(PeerList)
+	this.fluidBackup = fluidBackup
 	this.protocol = protocol
 	this.peers = make(map[PeerId]*Peer)
 	this.lastRequest = nil
 
 	go func() {
-		for {
+		for !fluidBackup.Stopping() {
 			this.update()
 			time.Sleep(time.Duration(50 * time.Millisecond))
 		}
@@ -42,7 +44,7 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 	peer, ok := this.peers[peerId]
 	if !ok {
 		Log.Info.Printf("Registering newly discovered peer at %s", peerId.String())
-		peer = MakePeer(peerId, this.protocol)
+		peer = MakePeer(peerId, this.fluidBackup, this.protocol)
 		this.peers[peerId] = peer
 	}
 	return peer

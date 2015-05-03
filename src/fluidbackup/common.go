@@ -2,6 +2,7 @@ package fluidbackup
 
 import "math/rand"
 import "crypto/sha1"
+import "strconv"
 
 /**
  * Contains mechanisms for server communication,
@@ -24,4 +25,22 @@ func randSeq(n int) string {
 func hash(b []byte) []byte {
 	hashArray := sha1.Sum(b)
 	return hashArray[:]
+}
+
+func strToInt64(s string) int64 {
+	n, _ := strconv.ParseInt(s, 0, 64)
+	return n
+}
+
+func strToInt(s string) int {
+	n, _ := strconv.ParseInt(s, 0, 32)
+	return int(n)
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	} else {
+		return 0
+	}
 }

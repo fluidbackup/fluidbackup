@@ -11,27 +11,37 @@ type Protocol struct {
 	peerList *PeerList
 	rpc      *rpc.Server
 	port     int
+	l        net.Listener
 }
 
-func MakeProtocol(port int) *Protocol {
+func MakeProtocol(fluidBackup *FluidBackup, port int) *Protocol {
 	this := new(Protocol)
 	this.port = port
 
 	this.rpc = rpc.NewServer()
 	this.rpc.Register(this)
 	l, e := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	this.l = l
 	if e != nil {
 		Log.Error.Printf("Error while initializing RPC handler: %s", e.Error())
 		return nil
 	}
 	go func() {
-		for {
-			conn, _ := l.Accept()
-			this.rpc.ServeConn(conn)
+		for !fluidBackup.Stopping() {
+			conn, _ := this.l.Accept()
+
+			if conn != nil {
+				this.rpc.ServeConn(conn)
+			}
 		}
 	}()
 
 	return this
+}
+
+func (this *Protocol) Stop() {
+	Log.Debug.Printf("Shutting down listener")
+	this.l.Close()
 }
 
 type PingArgs struct {

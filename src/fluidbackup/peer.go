@@ -5,6 +5,7 @@ import "fmt"
 import "io/ioutil"
 import "time"
 import "math/rand"
+import "strings"
 
 const (
 	STATUS_ONLINE = 0
@@ -20,6 +21,14 @@ func (this *PeerId) String() string {
 	return fmt.Sprintf("%s:%d", this.Address, this.Port)
 }
 
+func strToPeerId(str string) PeerId {
+	parts := strings.Split(str, ":")
+	return PeerId {
+		Address: parts[0],
+		Port: strToInt(parts[1]),
+	}
+}
+
 type Peer struct {
 	mu sync.Mutex
 	protocol *Protocol
@@ -33,14 +42,14 @@ type Peer struct {
 	remoteUsedBytes int
 }
 
-func MakePeer(id PeerId, protocol *Protocol) *Peer {
+func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 	this := new(Peer)
 	this.protocol = protocol
 	this.id = id
 	this.status = STATUS_ONLINE
 
 	go func() {
-		for {
+		for !fluidBackup.Stopping() {
 			this.update()
 
 			if Debug {

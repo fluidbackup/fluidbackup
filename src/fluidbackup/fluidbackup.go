@@ -3,6 +3,7 @@ package fluidbackup
 import "log"
 import "io"
 import "os"
+import "sync/atomic"
 
 var Log struct {
 	Debug *log.Logger
@@ -28,17 +29,38 @@ type FluidBackup struct {
 	fileStore *FileStore
 	blockStore *BlockStore
 	protocol *Protocol
+
+	stopping *int32
 }
 
 func MakeFluidBackup(port int) *FluidBackup {
 	InitLogging(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
 	this := new(FluidBackup)
 
-	this.protocol = MakeProtocol(port)
-	this.peerList = MakePeerList(this.protocol)
+	this.stopping = new(int32)
+	this.protocol = MakeProtocol(this, port)
+	this.peerList = MakePeerList(this, this.protocol)
 	this.protocol.setPeerList(this.peerList)
-	this.blockStore = MakeBlockStore(this.peerList)
+	this.blockStore = MakeBlockStore(this, this.peerList)
 	this.fileStore = MakeFileStore(this.blockStore)
 
 	return this
+}
+
+func (this *FluidBackup) Save() bool {
+	return this.fileStore.Save() && this.blockStore.Save()
+}
+
+func (this *FluidBackup) Load() bool {
+	return this.blockStore.Load() && this.fileStore.Load()
+}
+
+func (this *FluidBackup) Stop() {
+	Log.Info.Printf("Stopping...")
+	atomic.StoreInt32(this.stopping, 1)
+	this.protocol.Stop()
+}
+
+func (this *FluidBackup) Stopping() bool {
+	return atomic.LoadInt32(this.stopping) != 0
 }

@@ -3,6 +3,10 @@ package fluidbackup
 import "crypto/md5"
 import "os"
 import "sync"
+import "bufio"
+import "strings"
+import "fmt"
+import "encoding/hex"
 
 /*
  * FileId includes the absolute pathname of the file object.
@@ -69,7 +73,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 		}
 
 		hasher.Write(buf)
-		blockId := this.blockStore.RegisterBlock(path, file.Length, buf) // file.Length used as block's offset in parent file
+		blockId := this.blockStore.RegisterBlock(file.Id, file.Length, buf) // file.Length used as block's offset in parent file
 		file.Length += readCount
 		file.Blocks = append(file.Blocks, blockId)
 
@@ -82,7 +86,7 @@ func (this *FileStore) RegisterFile(path string) *File {
 
 	// update files structure
 	Log.Info.Printf("Registered new file from [%s]", path)
-	this.files[FileId(path)] = file
+	this.files[file.Id] = file
 	return file
 }
 
@@ -128,5 +132,73 @@ func (this *FileStore) RecoverFile(path string) bool {
 		numWritten += len(blockBytes)
 	}
 
+	return true
+}
+
+/*
+ * filestore metadata can be written and read from the disk using Save/Load functions below.
+ * The file format is a file on each line, consisting of string:
+ *     [filename]:[length]:[hex(hash)]:[block1],[block2],...,[block n],
+ */
+
+func (this *FileStore) Save() bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	Log.Info.Printf("Saving metadata to filestore.dat (%d files)", len(this.files))
+	fout, err := os.Create("filestore.dat")
+	if err != nil {
+		Log.Warn.Printf("Failed to save metadata to filestore.dat: %s", err.Error())
+		return false
+	}
+	defer fout.Close()
+
+	for fileId, file := range this.files {
+		fileDump := fmt.Sprintf("%s:%d:%s:", fileId, file.Length, hex.EncodeToString(file.Hash))
+		for _, blockId := range file.Blocks {
+			fileDump += fmt.Sprintf("%d", blockId) + ","
+		}
+		fileDump += "\n"
+		fout.Write([]byte(fileDump))
+	}
+
+	return true
+}
+
+func (this *FileStore) Load() bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	fin, err := os.Open("filestore.dat")
+	if err != nil {
+		Log.Warn.Printf("Failed to read metadata from filestore.dat: %s", err.Error())
+		return false
+	}
+	defer fin.Close()
+
+	scanner := bufio.NewScanner(fin)
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), ":")
+
+		if len(parts) != 4 {
+			continue
+		}
+
+		file := &File{}
+		file.Id = FileId(parts[0])
+		file.Length = strToInt(parts[1])
+		file.Hash, _ = hex.DecodeString(parts[2])
+
+		blockStrings := strings.Split(parts[3], ",")
+		file.Blocks = make([]BlockId, len(blockStrings) - 1) // last element of blockStrings is empty
+		for i, blockString := range blockStrings {
+			if i < len(file.Blocks) {
+				file.Blocks[i] = BlockId(strToInt64(blockString))
+			}
+		}
+
+		this.files[file.Id] = file
+	}
+
+	Log.Info.Printf("Loaded %d files", len(this.files))
 	return true
 }
