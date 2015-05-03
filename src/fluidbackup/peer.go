@@ -95,8 +95,7 @@ func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
 }
 
 /*
- * Our represented peer wants to store data on the local
- * peer (forwarded by protocol)
+ * Replicates a shard that the local peer wants to store on this peer.
  */
 func (this *Peer) storeShard(shard *BlockShard) bool {
 	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
