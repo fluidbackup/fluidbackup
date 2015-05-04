@@ -297,14 +297,12 @@ func (this *BlockStore) Load() bool {
 					// if there's a problem, then we may actually have to replicate on a new peer...
 					//  (e.g. we may have used the space for something else, and have strange accounting now?)
 					cfgAvailable := strToInt(shardParts[3]) == 1
-					if cfgAvailable {
-						if shard.Peer.reserveBytes(shard.Length, shard.Id) {
-							shard.Available = true
-						} else {
-							// failed to reserve, something bad happened in our accounting?
-							// we should replicate it elsewhere
-							shard.Peer = nil
-						}
+					if shard.Peer.reserveBytes(shard.Length, shard.Id) {
+						shard.Available = cfgAvailable
+					} else {
+						// failed to reserve, something bad happened in our accounting?
+						// we should replicate it elsewhere
+						shard.Peer = nil
 					}
 				}
 
