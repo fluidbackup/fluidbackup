@@ -70,15 +70,16 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 /*
  * Attempts to identify an available peer.
  * Caller requires [bytes] free bytes to use and doesn't want the peer to be in [ignorePeers] list.
+ * [shard] is the BlockShard that will be replicated with this reservation (used for space accounting).
  * Returns nil if we aren't able to satisfy the request (in this case we should also launch task to get more space).
  */
-func (this *PeerList) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool) *Peer {
+func (this *PeerList) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool, shardId BlockShardId) *Peer {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
 	for peerId, peer := range this.peers {
 		_, shouldIgnore := ignorePeers[peerId]
-		if !shouldIgnore && peer.reserveBytes(bytes) {
+		if !shouldIgnore && peer.reserveBytes(bytes, shardId) {
 			return peer
 		}
 	}

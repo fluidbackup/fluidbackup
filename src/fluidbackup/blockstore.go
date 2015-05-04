@@ -19,6 +19,7 @@ type BlockShardId int64
 type BlockShard struct {
 	Id        BlockShardId
 	Hash      []byte
+	Length    int
 	Peer      *Peer
 	Available bool // whether the peer has confirmed receipt of the shard
 
@@ -91,6 +92,7 @@ func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte
 		block.Shards[shardIndex] = &BlockShard{
 			Id:         BlockShardId(rand.Int63()),
 			Hash:       hash(shardBytes),
+			Length:     len(shardBytes),
 			Peer:       nil,
 			Available:  false,
 			Contents:   shardBytes,
@@ -180,7 +182,7 @@ func (this *BlockStore) update() {
 		// second pass: actually find new peers
 		for _, shard := range block.Shards {
 			if shard.Peer == nil {
-				availablePeer := this.peerList.FindAvailablePeer(len(shard.Contents), ignorePeers)
+				availablePeer := this.peerList.FindAvailablePeer(shard.Length, ignorePeers, shard.Id)
 
 				if availablePeer == nil {
 					// no available peer for this shard, other shards in this block won't have peers either
@@ -214,7 +216,7 @@ func (this *BlockStore) update() {
  * The file format is a block on each line, consisting of string:
  *     [blockid]:[fileid]:[file_offset]:[N]:[K]:[hex(hash)]:[shard1],[shard2],...,[shardn],
  * Each shard looks like:
-       [shardid].[peerid].[available].[hex(hash)]
+       [shardid]/[length]/[peerid]/[available]/[hex(hash)]
  */
 
 func (this *BlockStore) Save() bool {
@@ -235,7 +237,7 @@ func (this *BlockStore) Save() bool {
 			if shard.Peer != nil {
 				peerString = shard.Peer.id.String()
 			}
-			blockDump += fmt.Sprintf("%d/%s/%d/%s", shard.Id, peerString, boolToInt(shard.Available), hex.EncodeToString(shard.Hash)) + ","
+			blockDump += fmt.Sprintf("%d/%d/%s/%d/%s", shard.Id, shard.Length, peerString, boolToInt(shard.Available), hex.EncodeToString(shard.Hash)) + ","
 		}
 		blockDump += "\n"
 		fout.Write([]byte(blockDump))
@@ -277,18 +279,36 @@ func (this *BlockStore) Load() bool {
 			if i < len(block.Shards) {
 				shardParts := strings.Split(shardString, "/")
 
-				if len(shardParts) != 4 {
+				if len(shardParts) != 5 {
 					Log.Warn.Printf("Failed to read metadata from blockstore.dat: invalid shard [%s]", shardString)
 					return false
 				}
 
 				shard := &BlockShard{}
 				shard.Id = BlockShardId(strToInt64(shardParts[0]))
-				if shardParts[1] != "" {
-					shard.Peer = this.peerList.DiscoveredPeer(strToPeerId(shardParts[1]))
+				shard.Length = strToInt(shardParts[1])
+
+				shard.Available = false
+				if shardParts[2] != "" {
+					shard.Peer = this.peerList.DiscoveredPeer(strToPeerId(shardParts[2]))
+
+					// check if configuration indicates this shard has been replicated on the peer
+					// if so, we want to notify the peer object so that we correctly account for our space usage
+					// if there's a problem, then we may actually have to replicate on a new peer...
+					//  (e.g. we may have used the space for something else, and have strange accounting now?)
+					cfgAvailable := strToInt(shardParts[3]) == 1
+					if cfgAvailable {
+						if shard.Peer.reserveBytes(shard.Length, shard.Id) {
+							shard.Available = true
+						} else {
+							// failed to reserve, something bad happened in our accounting?
+							// we should replicate it elsewhere
+							shard.Peer = nil
+						}
+					}
 				}
-				shard.Available = strToInt(shardParts[2]) == 1
-				shard.Hash, _ = hex.DecodeString(shardParts[3])
+
+				shard.Hash, _ = hex.DecodeString(shardParts[4])
 
 				shard.Parent = block
 				shard.ShardIndex = i

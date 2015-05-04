@@ -49,6 +49,7 @@ type Peer struct {
 	// cached values
 	localUsedBytes  int
 	remoteUsedBytes int
+	shardsAccounted map[BlockShardId]bool // set of shards that we have accounted for in the cached remoteUsedBytes
 }
 
 func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
@@ -56,6 +57,7 @@ func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 	this.protocol = protocol
 	this.id = id
 	this.status = STATUS_ONLINE
+	this.shardsAccounted = make(map[BlockShardId]bool)
 
 	go func() {
 		/* keep updating until eternity */
@@ -98,6 +100,16 @@ func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
  * Replicates a shard that the local peer wants to store on this peer.
  */
 func (this *Peer) storeShard(shard *BlockShard) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	_, ok := this.shardsAccounted[shard.Id]
+	if !ok {
+		// this is bad, blockstore is trying to store a shard that hasn't been reserved yet?
+		Log.Error.Printf("Peer handler %s received unaccounted shard %d!", this.id.String(), shard.Id)
+		return false
+	}
+
 	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
 }
 
@@ -108,13 +120,29 @@ func (this *Peer) retrieveShard(shard *BlockShard) []byte {
 /*
  * Attempts to reserve a number of bytes for storage on this peer.
  * Returns true if the bytes have been reserved for use by caller, or false if reservation failed.
+ *
+ * Note that this is also used on startup to register reservations that were made earlier.
  */
-func (this *Peer) reserveBytes(bytes int) bool {
+func (this *Peer) reserveBytes(bytes int, shardId BlockShardId) bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
+	_, ok := this.shardsAccounted[shardId]
+	if ok {
+		// this should never happen: we should only make a reservation once
+		// to try and handle this, we (asynchronously) notify remote end that this shard
+		//  should be removed from their storage; we fail the reservation until this deletion
+		//  is completed
+		// it is possible but even more unlikely that this is triggered on startup when we
+		//  are registering past reservations; in that case this is still handled correctly
+		//  since the caller will delete the reservation detail and re-replicate
+		// TODO: tell peer to remove the shard
+		return false
+	}
+
 	if this.remoteBytes-this.remoteUsedBytes >= bytes {
 		this.remoteUsedBytes += bytes
+		this.shardsAccounted[shardId] = true
 		return true
 	} else {
 		return false
