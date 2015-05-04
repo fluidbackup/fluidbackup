@@ -41,8 +41,10 @@ func MakeFluidBackup(port int) *FluidBackup {
 	this.protocol = MakeProtocol(this, port)
 	this.peerList = MakePeerList(this, this.protocol)
 	this.protocol.setPeerList(this.peerList)
+
 	this.blockStore = MakeBlockStore(this, this.peerList)
-	this.fileStore = MakeFileStore(this.blockStore)
+	this.fileStore = MakeFileStore(this, this.blockStore)
+	this.blockStore.setFileStore(this.fileStore)
 
 	return this
 }

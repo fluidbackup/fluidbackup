@@ -53,6 +53,7 @@ type BlockStore struct {
 	peerList *PeerList
 	blocks   map[BlockId]*Block
 	replicateN, replicateK int
+	fileStore *FileStore
 }
 
 func MakeBlockStore(fluidBackup *FluidBackup, peerList *PeerList) *BlockStore {
@@ -71,6 +72,10 @@ func MakeBlockStore(fluidBackup *FluidBackup, peerList *PeerList) *BlockStore {
 	}()
 
 	return this
+}
+
+func (this *BlockStore) setFileStore(fileStore *FileStore) {
+	this.fileStore = fileStore
 }
 
 func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte) BlockId {
@@ -104,6 +109,25 @@ func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte
 	this.blocks[block.Id] = block
 	Log.Debug.Printf("Registered new block %d with %d shards", block.Id, len(block.Shards))
 	return block.Id
+}
+
+/*
+ * Called when the file store has re-read a block that we were missing the data for
+ */
+func (this *BlockStore) RetrievedBlockContents(blockId BlockId, contents []byte) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	block := this.blocks[blockId]
+
+	if block != nil {
+		shardContents := erasureEncode(contents, block.K, block.N)
+		for shardIndex, shard := range block.Shards {
+			if shard.Contents == nil && !shard.Available {
+				shard.Contents = shardContents[shardIndex]
+			}
+		}
+	}
 }
 
 func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
@@ -199,13 +223,25 @@ func (this *BlockStore) update() {
 	// we only commit once per update iteration to avoid hogging the lock?
 	for _, block := range this.blocks {
 		for _, shard := range block.Shards {
-			if shard.Peer != nil && !shard.Available {
+			if shard.Peer != nil && !shard.Available && shard.Contents != nil {
 				Log.Debug.Printf("Committing shard %d to peer %s", shard.Id, shard.Peer.id.String())
 				if shard.Peer.storeShard(shard) {
 					shard.Available = true
 					shard.Contents = nil
 				}
 				break
+			}
+		}
+	}
+
+	// look for shards that are not available but also don't have contents
+	// this can happen if we replicate it but verification has failed, and re-replication is necessary
+	// or if we never replicated it and reloaded from metadata on restart
+	for _, block := range this.blocks {
+		for _, shard := range block.Shards {
+			if !shard.Available && shard.Contents == nil && this.fileStore != nil {
+				go this.fileStore.RequestReread(block.ParentFile, block.FileOffset, block.Id) // do asynchronously to avoid deadlock
+				break // only one reread request needed per block, since erasure coding yields all the shards
 			}
 		}
 	}
