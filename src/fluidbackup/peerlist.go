@@ -31,11 +31,7 @@ type PeerList struct {
 
 	// a map of remote peers to their locally-assigned
 	// trust scores, used for peer discovery.
-	// Scores from 0 (least trustworthy) to 100 (most trustworthy)
-	//
-	// Trust is based on:
-	// - peer discovery
-	// - file storage agreement upholding
+	// See trust score section for documentation.
 	peerTrustScores map[PeerId]int
 }
 
@@ -77,7 +73,7 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 		peer = MakePeer(peerId, this.fluidBackup, this.protocol)
 		this.peers[peerId] = peer
 		// Add to trust map, initial score of 1.
-		this.peerTrustScores[peerId] = 1
+		this.addPeerToTrustStore(peerId)
 	}
 	return peer
 }
@@ -166,6 +162,7 @@ func (this *PeerList) HandleProposeAgreement(peerId PeerId, localBytes int, remo
 	return true
 }
 
+// called from protocol
 func (this *PeerList) HandleStoreShard(peerId PeerId, label int64, bytes []byte) bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -239,6 +236,33 @@ func (this *PeerList) Load() bool {
 
 	Log.Info.Printf("Loaded %d peers", len(this.peers))
 	return true
+}
+
+/* ================ *
+ * Trust Management *
+ * ================ */
+// Maintains a trust store (map) of peers
+// Scores from 0 (least trustworthy) to large ints
+// Trust is based on:
+// - peer discovery
+// - file storage agreement upholding
+
+/*
+ * Insert a new peer Id into our trust store
+ */
+func (this *PeerList) addPeerToTrustStore(peerId PeerId) {
+	_, ok := this.peerTrustScores[peerId]
+	if !ok {
+		// default initial trust score
+		this.peerTrustScores[peerId] = 1
+	}
+}
+
+/*
+ * Update the trust score of a peer
+ */
+func (this *PeerList) updateTrustForPeer(peerId PeerId) {
+
 }
 
 /* ============== *
