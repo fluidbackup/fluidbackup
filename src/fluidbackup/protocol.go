@@ -185,6 +185,7 @@ func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool 
 	}
 	var reply StoreShardReply
 	success := this.call(peerId, "StoreShard", args, &reply)
+	this.peerList.UpdateTrustPostStorage(peerId, success && reply.Confirm)
 	return success && reply.Confirm
 }
 
@@ -198,6 +199,7 @@ func (this *Protocol) retrieveShard(peerId PeerId, label int64) []byte {
 	}
 	var reply RetrieveShardReply
 	success := this.call(peerId, "RetrieveShard", args, &reply)
+	this.peerList.UpdateTrustPostRetrieval(peerId, success)
 	if !success {
 		return nil
 	} else {
