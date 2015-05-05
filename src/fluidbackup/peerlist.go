@@ -73,7 +73,7 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 		peer = MakePeer(peerId, this.fluidBackup, this.protocol)
 		this.peers[peerId] = peer
 		// Add to trust map, initial score of 1.
-		this.addPeerToTrustStore(peerId)
+		this.AddPeerToTrustStore(peerId)
 	}
 	return peer
 }
@@ -243,14 +243,14 @@ func (this *PeerList) Load() bool {
  * ================ */
 // Maintains a trust store (map) of peers
 // Scores from 0 (least trustworthy) to large ints
+// consider breaking into separate module
 // Trust is based on:
 // - peer discovery
 // - file storage agreement upholding
+// (externally exposed)
 
-/*
- * Insert a new peer Id into our trust store
- */
-func (this *PeerList) addPeerToTrustStore(peerId PeerId) {
+// private method
+func (this *PeerList) ensurePeerInTrustStore(peerId PeerId) {
 	_, ok := this.peerTrustScores[peerId]
 	if !ok {
 		// default initial trust score
@@ -258,11 +258,39 @@ func (this *PeerList) addPeerToTrustStore(peerId PeerId) {
 	}
 }
 
-/*
- * Update the trust score of a peer
- */
-func (this *PeerList) updateTrustForPeer(peerId PeerId) {
+// Update trust score geometrically based on success
+func (this *PeerList) updateTrustGeometrically(peerId PeerId, success bool) {
+	this.ensurePeerInTrustStore(peerId)
+	if success {
+		// do so geometrically
+		this.peerTrustScores[peerId] *= 2
+	} else {
+		formerScore := this.peerTrustScores[peerId]
+		this.peerTrustScores[peerId] = int(formerScore / 2)
+	}
+}
 
+/*
+ * Insert a new peer Id into our trust store
+ */
+func (this *PeerList) AddPeerToTrustStore(peerId PeerId) {
+	this.ensurePeerInTrustStore(peerId)
+}
+
+/*
+ * Update the trust score of a peer in response to a
+ * good/bad retrieval
+ */
+func (this *PeerList) UpdateTrustPostRetrieval(peerId PeerId, success bool) {
+	this.updateTrustGeometrically(peerId, success)
+}
+
+/*
+ * Update the trust score of a peer in response to a
+ * good/bad storage
+ */
+func (this *PeerList) UpdateTrustPostStorage(peerId PeerId, success bool) {
+	this.updateTrustGeometrically(peerId, success)
 }
 
 /* ============== *
