@@ -44,3 +44,9 @@ func boolToInt(b bool) int {
 		return 0
 	}
 }
+
+func zero(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}

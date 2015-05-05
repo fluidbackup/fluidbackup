@@ -41,6 +41,7 @@ func strToPeerId(str string) PeerId {
 type Peer struct {
 	mu          sync.Mutex
 	protocol    *Protocol
+	fluidBackup *FluidBackup
 	id          PeerId
 	status      int
 	localBytes  int // how many bytes we've agreed to store for this peer
@@ -49,11 +50,16 @@ type Peer struct {
 	// cached values
 	localUsedBytes  int
 	remoteUsedBytes int
-	shardsAccounted map[BlockShardId]bool // set of shards that we have accounted for in the cached remoteUsedBytes
+	lastVerifyTime time.Time // last time we performed a shard storage verification
+
+	// set of shards that we have accounted for in the cached remoteUsedBytes
+	// false if not replicated yet, true otherwise
+	shardsAccounted map[BlockShardId]bool
 }
 
 func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 	this := new(Peer)
+	this.fluidBackup = fluidBackup
 	this.protocol = protocol
 	this.id = id
 	this.status = STATUS_ONLINE
@@ -89,10 +95,10 @@ func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 }
 
 func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
-	Log.Debug.Printf("New agreement with %s (%d to %d)", this.id.String(), localBytes, remoteBytes)
 	this.mu.Lock()
 	this.localBytes += localBytes
 	this.remoteBytes += remoteBytes
+	Log.Debug.Printf("New agreement with %s (%d to %d; total %d/%d to %d/%d)", this.id.String(), localBytes, remoteBytes, this.localUsedBytes, this.localBytes, this.remoteUsedBytes, this.remoteBytes)
 	this.mu.Unlock()
 }
 
@@ -110,11 +116,12 @@ func (this *Peer) storeShard(shard *BlockShard) bool {
 		return false
 	}
 
+	this.shardsAccounted[shard.Id] = true
 	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
 }
 
-func (this *Peer) retrieveShard(shard *BlockShard) []byte {
-	return this.protocol.retrieveShard(this.id, int64(shard.Id))
+func (this *Peer) retrieveShard(shardId BlockShardId) []byte {
+	return this.protocol.retrieveShard(this.id, int64(shardId))
 }
 
 /*
@@ -123,7 +130,7 @@ func (this *Peer) retrieveShard(shard *BlockShard) []byte {
  *
  * Note that this is also used on startup to register reservations that were made earlier.
  */
-func (this *Peer) reserveBytes(bytes int, shardId BlockShardId) bool {
+func (this *Peer) reserveBytes(bytes int, shardId BlockShardId, alreadyReplicated bool) bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -142,7 +149,7 @@ func (this *Peer) reserveBytes(bytes int, shardId BlockShardId) bool {
 
 	if this.remoteBytes-this.remoteUsedBytes >= bytes {
 		this.remoteUsedBytes += bytes
-		this.shardsAccounted[shardId] = true
+		this.shardsAccounted[shardId] = alreadyReplicated
 		return true
 	} else {
 		return false
@@ -206,6 +213,8 @@ func (this *Peer) isOnline() bool {
  * peer.
  */
 func (this *Peer) update() {
+	// ping the peer
+	// we do this outside the lock to avoid communication latency in the lock
 	online := this.protocol.ping(this.id)
 
 	this.mu.Lock()
@@ -216,7 +225,44 @@ func (this *Peer) update() {
 		Log.Info.Printf("Peer %s went offline", this.id.String())
 		this.status = STATUS_OFFLINE
 	}
+
+	verificationDelay := 300 * time.Second
+	if Debug {
+		verificationDelay = time.Second
+	}
+
+	var randomShard *BlockShardId
+	if time.Now().After(this.lastVerifyTime.Add(verificationDelay)) {
+		this.lastVerifyTime = time.Now()
+
+		// pick a random shard to verify
+		availableShards := make([]BlockShardId, 0)
+		for shardId, available := range this.shardsAccounted {
+			if available {
+				availableShards = append(availableShards, shardId)
+			}
+		}
+
+		if len(availableShards) > 0 {
+			randomShard = &availableShards[rand.Intn(len(availableShards))]
+		}
+	}
 	this.mu.Unlock()
+
+	if randomShard != nil {
+		Log.Debug.Printf("Verifying shard %d on peer %s", *randomShard, this.id.String())
+		bytes := this.retrieveShard(*randomShard)
+		if !this.fluidBackup.blockStore.VerifyShard(this, *randomShard, bytes) {
+			// shard is invalid, delete from remote end
+			// block store will re-assign it already from the verifyshard call, so don't need to do anything else about that
+			Log.Info.Printf("Failed verification of shard %d on peer %s!", *randomShard, this.id.String())
+			this.mu.Lock()
+			delete(this.shardsAccounted, *randomShard)
+			this.mu.Unlock()
+			// TODO: actually delete from remote end
+			// TODO: probably want to decrease trust, if trust too low maybe remove all the shards and erase peer from our database
+		}
+	}
 }
 
 /* ============== *

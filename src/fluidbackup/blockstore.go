@@ -52,6 +52,7 @@ type BlockStore struct {
 	mu       sync.Mutex
 	peerList *PeerList
 	blocks   map[BlockId]*Block
+	shards   map[BlockShardId]*BlockShard
 	replicateN, replicateK int
 	fileStore *FileStore
 }
@@ -60,6 +61,7 @@ func MakeBlockStore(fluidBackup *FluidBackup, peerList *PeerList) *BlockStore {
 	this := new(BlockStore)
 	this.peerList = peerList
 	this.blocks = make(map[BlockId]*Block, 0)
+	this.shards = make(map[BlockShardId]*BlockShard, 0)
 	this.replicateN = DEFAULT_N
 	this.replicateK = DEFAULT_K
 
@@ -94,7 +96,7 @@ func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte
 	block.Shards = make([]*BlockShard, block.N)
 
 	for shardIndex, shardBytes := range shards {
-		block.Shards[shardIndex] = &BlockShard{
+		newShard := &BlockShard{
 			Id:         BlockShardId(rand.Int63()),
 			Hash:       hash(shardBytes),
 			Length:     len(shardBytes),
@@ -104,6 +106,8 @@ func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte
 			Parent:     block,
 			ShardIndex: shardIndex,
 		}
+		this.shards[newShard.Id] = newShard
+		block.Shards[shardIndex] = newShard
 	}
 
 	this.blocks[block.Id] = block
@@ -119,6 +123,10 @@ func (this *BlockStore) RetrievedBlockContents(blockId BlockId, contents []byte)
 	defer this.mu.Unlock()
 
 	block := this.blocks[blockId]
+
+	if !bytes.Equal(hash(contents), block.Hash) {
+		Log.Warn.Printf("Reread file block has different hash from existing block for block %d (file %s)", block.Id, block.ParentFile)
+	}
 
 	if block != nil {
 		shardContents := erasureEncode(contents, block.K, block.N)
@@ -152,7 +160,7 @@ func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
 		}
 
 		Log.Debug.Printf("Attempting to retrieve shard %d from peer %s", shard.Id, shard.Peer.id.String())
-		currBytes := shard.Peer.retrieveShard(shard)
+		currBytes := shard.Peer.retrieveShard(shard.Id)
 
 		if currBytes == nil {
 			Log.Warn.Printf("Failed to retrieve shard %d from peer %s (empty response)", shard.Id, shard.Peer.id.String())
@@ -187,6 +195,29 @@ func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
 
 	Log.Debug.Printf("Successfully recovered block %d", block.Id)
 	return blockBytes
+}
+
+func (this *BlockStore) VerifyShard(peer *Peer, shardId BlockShardId, contents []byte) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	shard := this.shards[shardId]
+
+	if shard == nil {
+		return false
+	}
+
+	success := bytes.Equal(hash(contents), shard.Hash)
+
+	if !success {
+		// peer is notifying us that this shard failed, let's re-assign it..
+		if shard.Peer == peer && shard.Available {
+			shard.Peer = nil
+			shard.Available = false
+		}
+	}
+
+	return success
 }
 
 func (this *BlockStore) update() {
@@ -228,6 +259,8 @@ func (this *BlockStore) update() {
 				if shard.Peer.storeShard(shard) {
 					shard.Available = true
 					shard.Contents = nil
+				} else {
+					Log.Debug.Printf("Failed to commit shard %d to peer %s", shard.Id, shard.Peer.id.String())
 				}
 				break
 			}
@@ -333,7 +366,7 @@ func (this *BlockStore) Load() bool {
 					// if there's a problem, then we may actually have to replicate on a new peer...
 					//  (e.g. we may have used the space for something else, and have strange accounting now?)
 					cfgAvailable := strToInt(shardParts[3]) == 1
-					if shard.Peer.reserveBytes(shard.Length, shard.Id) {
+					if shard.Peer.reserveBytes(shard.Length, shard.Id, true) {
 						shard.Available = cfgAvailable
 					} else {
 						// failed to reserve, something bad happened in our accounting?

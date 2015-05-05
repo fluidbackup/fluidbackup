@@ -90,14 +90,16 @@ func (this *PeerList) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool, 
 
 	for peerId, peer := range this.peers {
 		_, shouldIgnore := ignorePeers[peerId]
-		if !shouldIgnore && peer.reserveBytes(bytes, shardId) {
+		if !shouldIgnore && peer.reserveBytes(bytes, shardId, false) {
 			return peer
 		}
 	}
 
 	// none of our peers could satisfy this request with existing agreements
-	// update last request so that we will create new agreement and eventually satisfy
-	this.lastRequest = &PeerRequest{Bytes: bytes, IgnorePeers: ignorePeers}
+	// update last request so that we will create new agreement and eventually satisfy (but don't overwrite requests with less constraints)
+	if this.lastRequest == nil || len(this.lastRequest.IgnorePeers) > len(ignorePeers) {
+		this.lastRequest = &PeerRequest{Bytes: bytes, IgnorePeers: ignorePeers}
+	}
 	return nil
 }
 

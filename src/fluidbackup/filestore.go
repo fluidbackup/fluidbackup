@@ -8,6 +8,7 @@ import "strings"
 import "fmt"
 import "encoding/hex"
 import "time"
+import "io"
 
 /*
  * FileId includes the absolute pathname of the file object.
@@ -163,6 +164,10 @@ func (this *FileStore) handleJob(job FileReadJob) {
 	}
 
 	defer fin.Close()
+	// we use a fixed length buffer to read the file
+	// zeroing the buffer is needed for the last block of the file, since we want to
+	//  make sure any extra bytes that get tacked on are consistent across re-reads of
+	//  the file (otherwise we'll have hash mismatch issues)
 	buf := make([]byte, FILE_BLOCK_SIZE)
 
 	if job.Subs == nil {
@@ -170,6 +175,7 @@ func (this *FileStore) handleJob(job FileReadJob) {
 		hasher := md5.New()
 
 		for {
+			zero(buf)
 			readCount, err := fin.Read(buf)
 
 			if err != nil {
@@ -191,17 +197,10 @@ func (this *FileStore) handleJob(job FileReadJob) {
 		file.Hash = hasher.Sum(nil)
 	} else {
 		for _, sub := range job.Subs {
-			_, err := fin.Seek(int64(sub.Offset), 0)
+			zero(buf)
+			_, err = fin.ReadAt(buf, int64(sub.Offset))
 
-			if err != nil {
-				Log.Error.Printf("Error encountered while reading from file [%s]: %s", path, err.Error())
-				file.Error = true // don't attempt to read from this file again until user resolves the problem
-				return
-			}
-
-			_, err = fin.Read(buf)
-
-			if err != nil {
+			if err != nil && err != io.EOF {
 				Log.Error.Printf("Error encountered while reading from file [%s]: %s", path, err.Error())
 				file.Error = true // don't attempt to read from this file again until user resolves the problem
 				return
