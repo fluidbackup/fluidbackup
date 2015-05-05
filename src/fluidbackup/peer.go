@@ -76,8 +76,8 @@ func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 }
 
 /*
- * Our represented peer wants to propose agreement
- * with the local peer.
+ * Our local peer wants to propose agreement
+ * with the represented remote peer.
  */
 func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 	if this.protocol.proposeAgreement(this.id, localBytes, remoteBytes) {
@@ -217,4 +217,16 @@ func (this *Peer) update() {
 		this.status = STATUS_OFFLINE
 	}
 	this.mu.Unlock()
+}
+
+/* ============== *
+ * Peer Discovery *
+ * ============== */
+
+// Ask this remote peer for the
+// specified number of peers
+func (this *Peer) askForPeers(num int) []PeerId {
+	sharedPeerIds := this.protocol.askForPeers(this.id, num)
+	// Insert peer handler here if necesssay.
+	return sharedPeerIds
 }

@@ -29,3 +29,4 @@ _testmain.go
 
 # Local Storage
 *.txt
+*.dat

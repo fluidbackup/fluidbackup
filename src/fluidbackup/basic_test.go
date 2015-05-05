@@ -8,7 +8,7 @@ import "os"
 import "bytes"
 
 func TestBasic(t *testing.T) {
-	fileContents := make([]byte, 1500 * 1024)
+	fileContents := make([]byte, 1500*1024)
 	for i := range fileContents {
 		fileContents[i] = byte(rand.Int() % 256)
 	}
@@ -28,7 +28,7 @@ func TestBasic(t *testing.T) {
 		if i < 5 {
 			bMain.peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: port})
 		} else {
-			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort});
+			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort})
 		}
 	}
 
@@ -58,8 +58,10 @@ func TestBasic(t *testing.T) {
 	}
 }
 
+// Attempts to kill the local peer
+// and ensure that the file can be recovered.
 func TestStable(t *testing.T) {
-	fileContents := make([]byte, 1500 * 1024)
+	fileContents := make([]byte, 1500*1024)
 	for i := range fileContents {
 		fileContents[i] = byte(rand.Int() % 256)
 	}
@@ -79,7 +81,7 @@ func TestStable(t *testing.T) {
 		if i < 5 {
 			bMain.peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: port})
 		} else {
-			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort});
+			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort})
 		}
 	}
 
@@ -116,7 +118,7 @@ func TestStable(t *testing.T) {
 }
 
 func TestReread(t *testing.T) {
-	fileContents := make([]byte, 1500 * 1024)
+	fileContents := make([]byte, 1500*1024)
 	for i := range fileContents {
 		fileContents[i] = byte(rand.Int() % 256)
 	}
@@ -143,7 +145,7 @@ func TestReread(t *testing.T) {
 		if i < 5 {
 			bMain.peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: port})
 		} else {
-			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort});
+			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort})
 		}
 	}
 

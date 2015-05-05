@@ -88,6 +88,15 @@ type RetrieveShardReply struct {
 	Bytes []byte
 }
 
+type ShareNewPeersArgs struct {
+	Me  PeerId
+	Num int
+}
+
+type ShareNewPeersReply struct {
+	SharedPeers []PeerId
+}
+
 func (this *Protocol) setPeerList(peerList *PeerList) {
 	this.peerList = peerList
 }
@@ -245,5 +254,33 @@ func (this *Protocol) HandleRetrieveShard(args *RetrieveShardArgs, reply *Retrie
 		reply.Bytes = this.peerList.HandleRetrieveShard(args.Me, args.Label)
 	}
 
+	return nil
+}
+
+/* ============== *
+ * Peer Discovery *
+ * ============== */
+
+// Ask the given remote peer (id) to share
+// some of its valuable peers
+func (this *Protocol) askForPeers(peerId PeerId, num int) []PeerId {
+	args := &ShareNewPeersArgs{}
+	var reply ShareNewPeersReply
+	args.Me = this.getMe()
+	args.Num = num
+	success := this.call(peerId, "ShareNewPeers", args, &reply)
+	if success {
+		return reply.SharedPeers
+	}
+	return nil
+}
+
+/*
+ * Request to share new peers...
+ */
+func (this *Protocol) HandleShareNewPeers(args *ShareNewPeersArgs, reply *ShareNewPeersReply) error {
+	asker := args.Me
+	peerList := this.peerList.HandleShareNewPeers(asker, args.Num)
+	reply.SharedPeers = peerList
 	return nil
 }

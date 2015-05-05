@@ -7,9 +7,12 @@ import "os"
 import "fmt"
 import "bufio"
 import "strings"
+import "sort"
 
 type PeerRequest struct {
-	Bytes       int
+	Bytes int
+
+	// a list of peers that we are already using
 	IgnorePeers map[PeerId]bool
 }
 
@@ -25,6 +28,15 @@ type PeerList struct {
 	peers       map[PeerId]*Peer
 	lastRequest *PeerRequest
 	fluidBackup *FluidBackup
+
+	// a map of remote peers to their locally-assigned
+	// trust scores, used for peer discovery.
+	// Scores from 0 (least trustworthy) to 100 (most trustworthy)
+	//
+	// Trust is based on:
+	// - peer discovery
+	// - file storage agreement upholding
+	peerTrustScores map[PeerId]int
 }
 
 /*
@@ -35,6 +47,7 @@ func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	this.fluidBackup = fluidBackup
 	this.protocol = protocol
 	this.peers = make(map[PeerId]*Peer)
+	this.peerTrustScores = make(map[PeerId]int)
 	this.lastRequest = nil
 
 	go func() {
@@ -63,6 +76,8 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 		// Make local representations of known remote peers.
 		peer = MakePeer(peerId, this.fluidBackup, this.protocol)
 		this.peers[peerId] = peer
+		// Add to trust map, initial score of 1.
+		this.peerTrustScores[peerId] = 1
 	}
 	return peer
 }
@@ -224,4 +239,93 @@ func (this *PeerList) Load() bool {
 
 	Log.Info.Printf("Loaded %d peers", len(this.peers))
 	return true
+}
+
+/* ============== *
+ * Peer Discovery *
+ * ============== */
+// How?
+// Ask trusted peers for more peers.
+// Need incentive for peer to share good peers
+//    - incentive to share: want another trustworthy peer
+//      to share with
+//    - the trust rating of a peer is related to how good
+//      the peers it shares are. Global trust ratings?
+//    - trust ratings not global. But some peers may
+//      choose to reveal their stored trust ratings
+
+/*
+ * Mechanism for sorting PeerIDs by Trust or an arbitrary Score
+ */
+type ByScore struct {
+	// the peer Ids to sort
+	peerIds []PeerId
+	// the score to sort by
+	peerScores map[PeerId]int
+}
+
+func (sorter ByScore) Len() int {
+	return len(sorter.peerIds)
+}
+func (sorter ByScore) Swap(i, j int) {
+	pIds := sorter.peerIds
+	pIds[i], pIds[j] = pIds[j], pIds[i]
+}
+func (sorter ByScore) Less(i, j int) bool {
+	peerIdA := sorter.peerIds[i]
+	peerIdB := sorter.peerIds[j]
+	return sorter.peerScores[peerIdA] < sorter.peerScores[peerIdB]
+}
+
+/*
+ * Attempt to find (num) new peers through our current
+ * peer network.
+ * Returns how many peers were found.
+ */
+func (this *PeerList) findNewPeers(num int) int {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	// First, build a list of peers sorted by trust
+	sliceOfPeerIds := make([]PeerId, len(this.peerTrustScores))
+	i := 0
+	for peerId, _ := range this.peerTrustScores {
+		sliceOfPeerIds[i] = peerId
+		i += 1
+	}
+	sort.Sort(ByScore{sliceOfPeerIds, this.peerTrustScores})
+
+	// Go through the top trustedPeers
+	// todo: don't reask. Optimizations to be made...
+	var newPeerIds []PeerId
+	for _, peerId := range sliceOfPeerIds {
+		// synchronously ask for more peers (for now)
+		// (todo: ask asynchronously to improve performance)
+		sharedPeerIds := this.peers[peerId].askForPeers(num)
+		newPeerIds = append(newPeerIds, sharedPeerIds...)
+	}
+
+	// add new peers to our peerList
+	trueNewPeerCount := 0
+	for _, peerId := range newPeerIds {
+		// ignore ones that we already have
+		if _, ok := this.peers[peerId]; !ok {
+			this.DiscoveredPeer(peerId)
+			trueNewPeerCount += 1
+		}
+	}
+
+	return trueNewPeerCount
+}
+
+/*
+ * Another peer asked us for shared peers.
+ */
+func (this *PeerList) HandleShareNewPeers(peerId PeerId, num int) []PeerId {
+	// todo make this useful
+	peerList := make([]PeerId, len(this.peers))
+	for peerId, _ := range this.peers {
+		peerList = append(peerList, peerId)
+	}
+	return peerList
 }
