@@ -278,13 +278,24 @@ func (sorter ByScore) Less(i, j int) bool {
 }
 
 /*
+ * Exposed way to find (num) new peers through our current
+ * peer network.
+ * Returns how total number of current peers after execution.
+ */
+func (this *PeerList) FindNewPeers(num int) int {
+	this.findNewPeers(num)
+	return len(this.peers)
+}
+
+/*
  * Attempt to find (num) new peers through our current
  * peer network.
  * Returns how many peers were found.
  */
 func (this *PeerList) findNewPeers(num int) int {
+	// prevent anyone else from modifying peers
+	// and trust scores while we are working with them
 	this.mu.Lock()
-	defer this.mu.Unlock()
 
 	// First, build a list of peers sorted by trust
 	sliceOfPeerIds := make([]PeerId, len(this.peerTrustScores))
@@ -303,16 +314,25 @@ func (this *PeerList) findNewPeers(num int) int {
 		// (todo: ask asynchronously to improve performance)
 		sharedPeerIds := this.peers[peerId].askForPeers(num)
 		newPeerIds = append(newPeerIds, sharedPeerIds...)
+
 	}
+
+	this.mu.Unlock()
 
 	// add new peers to our peerList
 	trueNewPeerCount := 0
 	for _, peerId := range newPeerIds {
-		// ignore ones that we already have
-		if _, ok := this.peers[peerId]; !ok {
-			this.DiscoveredPeer(peerId)
-			trueNewPeerCount += 1
+		// ignore ourself
+		if peerId == this.protocol.GetMe() {
+			continue
 		}
+		// ignore ones that we already have
+		if _, ok := this.peers[peerId]; ok {
+			continue
+		}
+
+		this.DiscoveredPeer(peerId)
+		trueNewPeerCount += 1
 	}
 
 	return trueNewPeerCount
@@ -320,12 +340,15 @@ func (this *PeerList) findNewPeers(num int) int {
 
 /*
  * Another peer asked us for shared peers.
+ * Currently just give all the peers regardless.
  */
 func (this *PeerList) HandleShareNewPeers(peerId PeerId, num int) []PeerId {
 	// todo make this useful
 	peerList := make([]PeerId, len(this.peers))
+	i := 0
 	for peerId, _ := range this.peers {
-		peerList = append(peerList, peerId)
+		peerList[i] = peerId
+		i += 1
 	}
 	return peerList
 }

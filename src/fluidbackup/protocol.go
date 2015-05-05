@@ -104,7 +104,7 @@ func (this *Protocol) setPeerList(peerList *PeerList) {
 /*
  * Get a reference to the current peer/protocol module
  */
-func (this *Protocol) getMe() PeerId {
+func (this *Protocol) GetMe() PeerId {
 	ifaces, err := net.Interfaces()
 
 	if err != nil {
@@ -150,7 +150,7 @@ func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply int
  * Ask another peer to see if it is alive.
  */
 func (this *Protocol) ping(peerId PeerId) bool {
-	args := &PingArgs{Me: this.getMe()}
+	args := &PingArgs{Me: this.GetMe()}
 	var reply PingReply
 	success := this.call(peerId, "Ping", args, &reply)
 	Log.Debug.Printf("Ping %s: %t", peerId.String(), success)
@@ -164,7 +164,7 @@ func (this *Protocol) ping(peerId PeerId) bool {
  */
 func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteBytes int) bool {
 	args := &ProposeAgreementArgs{
-		Me:        this.getMe(),
+		Me:        this.GetMe(),
 		MyBytes:   localBytes,
 		YourBytes: remoteBytes,
 	}
@@ -179,7 +179,7 @@ func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteByte
  */
 func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool {
 	args := &StoreShardArgs{
-		Me:    this.getMe(),
+		Me:    this.GetMe(),
 		Label: label,
 		Bytes: bytes,
 	}
@@ -193,7 +193,7 @@ func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool 
  */
 func (this *Protocol) retrieveShard(peerId PeerId, label int64) []byte {
 	args := &RetrieveShardArgs{
-		Me:    this.getMe(),
+		Me:    this.GetMe(),
 		Label: label,
 	}
 	var reply RetrieveShardReply
@@ -266,7 +266,7 @@ func (this *Protocol) HandleRetrieveShard(args *RetrieveShardArgs, reply *Retrie
 func (this *Protocol) askForPeers(peerId PeerId, num int) []PeerId {
 	args := &ShareNewPeersArgs{}
 	var reply ShareNewPeersReply
-	args.Me = this.getMe()
+	args.Me = this.GetMe()
 	args.Num = num
 	success := this.call(peerId, "ShareNewPeers", args, &reply)
 	if success {
@@ -281,6 +281,7 @@ func (this *Protocol) askForPeers(peerId PeerId, num int) []PeerId {
 func (this *Protocol) HandleShareNewPeers(args *ShareNewPeersArgs, reply *ShareNewPeersReply) error {
 	asker := args.Me
 	peerList := this.peerList.HandleShareNewPeers(asker, args.Num)
+
 	reply.SharedPeers = peerList
 	return nil
 }

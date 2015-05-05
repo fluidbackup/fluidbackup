@@ -174,3 +174,41 @@ func TestReread(t *testing.T) {
 		inst.Stop()
 	}
 }
+
+func TestBasicPeerSharing(t *testing.T) {
+	// todo: need to implement:
+	// - trust ranking
+	// - how many peers do we want?
+	mainPort := 19838
+	bMain := MakeFluidBackup(mainPort)
+
+	// Make a giant centroid peer network first
+	bOther := make([]*FluidBackup, 11)
+	for i := range bOther {
+		port := 19839 + i
+		bOther[i] = MakeFluidBackup(port)
+		if i < 5 {
+			bMain.peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: port})
+		} else {
+			bOther[i].peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort})
+		}
+	}
+
+	time.Sleep(time.Second)
+
+	// Now, connect anoter peer to the centroid
+	newDiscoverer := MakeFluidBackup(mainPort - 1)
+	newDiscoverer.peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort})
+	numPeers := newDiscoverer.peerList.FindNewPeers(len(bOther))
+
+	if numPeers != len(bOther)+1 {
+		t.Fatalf("Num peers %v, expected %v", numPeers, len(bOther)+1)
+	}
+
+	// shut down fluidbackup instances
+	bMain.Stop()
+	newDiscoverer.Stop()
+	for _, inst := range bOther {
+		inst.Stop()
+	}
+}
