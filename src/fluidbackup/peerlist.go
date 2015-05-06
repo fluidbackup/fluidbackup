@@ -33,6 +33,10 @@ type PeerList struct {
 	// trust scores, used for peer discovery.
 	// See trust score section for documentation.
 	peerTrustScores map[PeerId]int
+
+	// Maintain a map of related peers
+	// for each peerId
+	relatedPeers map[PeerId][]PeerId
 }
 
 /*
@@ -44,6 +48,7 @@ func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	this.protocol = protocol
 	this.peers = make(map[PeerId]*Peer)
 	this.peerTrustScores = make(map[PeerId]int)
+	this.relatedPeers = make(map[PeerId][]PeerId)
 	this.lastRequest = nil
 
 	go func() {
@@ -259,7 +264,7 @@ func (this *PeerList) Load() bool {
 // Scores from 0 (least trustworthy) to large ints
 // consider breaking into separate module
 // Trust is based on:
-// - peer discovery
+// - related peers (one direction) (map)
 // - file storage agreement upholding
 // (externally exposed)
 
@@ -354,6 +359,15 @@ func (this *PeerList) FindNewPeers(num int) int {
 }
 
 /*
+ * A convenience data holder for peer referral,
+ * used in findNewPeers.
+ */
+type PeerReferral struct {
+	sourcePeerId    PeerId
+	referredPeerIds []PeerId
+}
+
+/*
  * Attempt to find (num) new peers through our current
  * peer network.
  * Returns how many peers were found.
@@ -374,12 +388,13 @@ func (this *PeerList) findNewPeers(num int) int {
 
 	// Go through the top trustedPeers
 	// todo: don't reask. Optimizations to be made...
-	var newPeerIds []PeerId
+	var newPeerReferrals []PeerReferral
 	for _, peerId := range sliceOfPeerIds {
 		// synchronously ask for more peers (for now)
 		// (todo: ask asynchronously to improve performance)
 		sharedPeerIds := this.peers[peerId].askForPeers(num)
-		newPeerIds = append(newPeerIds, sharedPeerIds...)
+		newPeerReferral := PeerReferral{peerId, sharedPeerIds}
+		newPeerReferrals = append(newPeerReferrals, newPeerReferral)
 
 	}
 
@@ -387,18 +402,25 @@ func (this *PeerList) findNewPeers(num int) int {
 
 	// add new peers to our peerList
 	trueNewPeerCount := 0
-	for _, peerId := range newPeerIds {
-		// ignore ourself
-		if peerId == this.protocol.GetMe() {
-			continue
-		}
-		// ignore ones that we already have
-		if _, ok := this.peers[peerId]; ok {
-			continue
-		}
+	for _, peerReferral := range newPeerReferrals {
+		for _, peerId := range peerReferral.referredPeerIds {
+			// ignore ourself
+			if peerId == this.protocol.GetMe() {
+				continue
+			}
+			// ignore ones that we already have
+			if _, ok := this.peers[peerId]; ok {
+				continue
+			}
+			// add to related peers
+			relatedPeerList := this.relatedPeers[peerReferral.sourcePeerId]
+			relatedPeerList = append(relatedPeerList, peerId)
+			this.relatedPeers[peerReferral.sourcePeerId] = relatedPeerList
 
-		this.DiscoveredPeer(peerId)
-		trueNewPeerCount += 1
+			// finally, actually discover the peer.
+			this.DiscoveredPeer(peerId)
+			trueNewPeerCount += 1
+		}
 	}
 
 	return trueNewPeerCount
