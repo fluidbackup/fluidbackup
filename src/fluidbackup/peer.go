@@ -6,6 +6,7 @@ import "io/ioutil"
 import "time"
 import "math/rand"
 import "strings"
+import "os"
 
 const (
 	STATUS_ONLINE  = 0
@@ -64,6 +65,7 @@ func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 	this.id = id
 	this.status = STATUS_ONLINE
 	this.shardsAccounted = make(map[BlockShardId]bool)
+	this.accountLocalUsedBytes()
 
 	go func() {
 		/* keep updating until eternity */
@@ -103,6 +105,26 @@ func (this *Peer) eventAgreement(localBytes int, remoteBytes int) {
 }
 
 /*
+ * Recomputes the number of bytes we are storing for this peer by searching filesystem.
+ * Assumes caller has the lock.
+ */
+func (this *Peer) accountLocalUsedBytes() {
+	oldUsedBytes := this.localUsedBytes
+	this.localUsedBytes = 0
+	files, _ := ioutil.ReadDir("store/")
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".obj") && strings.HasSuffix(f.Name(), this.id.String() + "_") {
+			fi, err := os.Stat("store/" + f.Name())
+			if err == nil {
+				this.localUsedBytes += int(fi.Size())
+			}
+		}
+	}
+
+	Log.Debug.Printf("Re-accounted stored bytes from %d to %d", oldUsedBytes, this.localUsedBytes)
+}
+
+/*
  * Replicates a shard that the local peer wants to store on this peer.
  */
 func (this *Peer) storeShard(shard *BlockShard) bool {
@@ -118,6 +140,29 @@ func (this *Peer) storeShard(shard *BlockShard) bool {
 
 	this.shardsAccounted[shard.Id] = true
 	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
+}
+
+func (this *Peer) deleteShard(shardId BlockShardId) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	replicated, ok := this.shardsAccounted[shardId]
+	if !ok || !replicated {
+		// this is bad, blockstore is trying to delete a shard that hasn't been replicated yet?
+		Log.Error.Printf("Peer handler %s received deletion request for unaccounted shard %d!", this.id.String(), shardId)
+		return false
+	}
+
+	shard := this.fluidBackup.blockStore.GetShard(shardId)
+	if shard == nil {
+		Log.Error.Printf("Peer handler %s received deletion request for non-existent shard %d!", this.id.String(), shardId)
+		return false
+	}
+
+	delete(this.shardsAccounted, shardId)
+	this.protocol.deleteShard(this.id, int64(shardId))
+	this.remoteUsedBytes -= shard.Length
+	return true
 }
 
 func (this *Peer) retrieveShard(shardId BlockShardId) []byte {
@@ -143,7 +188,7 @@ func (this *Peer) reserveBytes(bytes int, shardId BlockShardId, alreadyReplicate
 		// it is possible but even more unlikely that this is triggered on startup when we
 		//  are registering past reservations; in that case this is still handled correctly
 		//  since the caller will delete the reservation detail and re-replicate
-		// TODO: tell peer to remove the shard
+		go this.deleteShard(shardId)
 		return false
 	}
 
@@ -185,6 +230,13 @@ func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
 
 	this.remoteUsedBytes += len(bytes)
 	return true
+}
+
+func (this *Peer) eventDeleteShard(label int64) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	os.Remove(this.getShardPath(label))
+	this.accountLocalUsedBytes()
 }
 
 func (this *Peer) eventRetrieveShard(label int64) []byte {
@@ -259,7 +311,7 @@ func (this *Peer) update() {
 			this.mu.Lock()
 			delete(this.shardsAccounted, *randomShard)
 			this.mu.Unlock()
-			// TODO: actually delete from remote end
+			this.deleteShard(*randomShard)
 			// TODO: probably want to decrease trust, if trust too low maybe remove all the shards and erase peer from our database
 		}
 	}

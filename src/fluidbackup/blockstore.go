@@ -220,6 +220,12 @@ func (this *BlockStore) VerifyShard(peer *Peer, shardId BlockShardId, contents [
 	return success
 }
 
+func (this *BlockStore) GetShard(shardId BlockShardId) *BlockShard {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.shards[shardId]
+}
+
 func (this *BlockStore) update() {
 	this.mu.Lock()
 	defer this.mu.Unlock()

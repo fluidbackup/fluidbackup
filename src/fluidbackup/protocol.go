@@ -79,6 +79,14 @@ type StoreShardReply struct {
 	Confirm bool
 }
 
+type DeleteShardArgs struct {
+	Me    PeerId
+	Label int64
+}
+
+type DeleteShardReply struct {
+}
+
 type RetrieveShardArgs struct {
 	Me    PeerId
 	Label int64
@@ -189,6 +197,15 @@ func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool 
 	return success && reply.Confirm
 }
 
+func (this *Protocol) deleteShard(peerId PeerId, label int64) {
+	args := &DeleteShardArgs{
+		Me:    this.GetMe(),
+		Label: label,
+	}
+	var reply DeleteShardReply
+	this.call(peerId, "DeleteShard", args, &reply)
+}
+
 /*
  * Retrieve a labeled set of bytes from the given peer.
  */
@@ -240,6 +257,17 @@ func (this *Protocol) HandleStoreShard(args *StoreShardArgs, reply *StoreShardRe
 		reply.Confirm = false
 	} else {
 		reply.Confirm = this.peerList.HandleStoreShard(args.Me, args.Label, args.Bytes)
+	}
+
+	return nil
+}
+
+/*
+ * Called from another peer when they want to delete a previously stored shard.
+ */
+func (this *Protocol) HandleDeleteShard(args *DeleteShardArgs, reply *DeleteShardReply) error {
+	if this.peerList != nil {
+		this.peerList.HandleDeleteShard(args.Me, args.Label)
 	}
 
 	return nil

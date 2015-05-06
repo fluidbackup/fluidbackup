@@ -177,6 +177,18 @@ func (this *PeerList) HandleStoreShard(peerId PeerId, label int64, bytes []byte)
 	return peer.eventStoreShard(label, bytes)
 }
 
+func (this *PeerList) HandleDeleteShard(peerId PeerId, label int64) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	peer, ok := this.peers[peerId]
+	if !ok {
+		return
+	}
+
+	peer.eventDeleteShard(label)
+}
+
 func (this *PeerList) HandleRetrieveShard(peerId PeerId, label int64) []byte {
 	this.mu.Lock()
 	defer this.mu.Unlock()
