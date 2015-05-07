@@ -66,3 +66,15 @@ func (this *FluidBackup) Stop() {
 func (this *FluidBackup) Stopping() bool {
 	return atomic.LoadInt32(this.stopping) != 0
 }
+
+func (this *FluidBackup) RegisterFile(path string) bool {
+	return this.fileStore.RegisterFile(path) != nil
+}
+
+func (this *FluidBackup) RecoverFile(path string) bool {
+	return this.fileStore.RecoverFile(path)
+}
+
+func (this *FluidBackup) DiscoveredPeer(ipport string) {
+	this.peerList.DiscoveredPeer(strToPeerId(ipport))
+}

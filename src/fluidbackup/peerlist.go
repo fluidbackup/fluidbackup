@@ -125,11 +125,14 @@ func (this *PeerList) update() {
 
 	if len(this.peers) < this.desiredNumPeers {
 		difference := this.desiredNumPeers - len(this.peers)
-		Log.Info.Printf("Obtaining (%v) new peers. Current (%v): Desired (%v)", difference, len(this.peers), this.desiredNumPeers)
+		oldNum := len(this.peers)
 		this.mu.Unlock()
 		newNum := this.FindNewPeers(difference)
 		this.mu.Lock()
-		Log.Info.Printf("Network now contains (%v) peers.", newNum)
+
+		if newNum > oldNum {
+			Log.Info.Printf("Found new peers, network peers from %d => %d.", oldNum, newNum)
+		}
 	}
 
 	// handle last failed request if set
