@@ -42,6 +42,7 @@ type Block struct {
 	N      int
 	K      int
 	Shards []*BlockShard
+	Key    []byte
 
 	// source
 	ParentFile FileId
@@ -90,6 +91,18 @@ func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte
 	block.K = this.replicateK
 	block.ParentFile = fileId
 	block.FileOffset = offset
+
+	// encrypt contents
+	var err error
+	block.Key, err = cryptGenerateKey()
+	if err != nil {
+		panic(err)
+	}
+	contents, err = cryptEncrypt(block.Key, contents)
+	if err != nil {
+		panic(err)
+	}
+
 	block.Hash = hash(contents)
 
 	shards := erasureEncode(contents, block.K, block.N)
@@ -123,6 +136,12 @@ func (this *BlockStore) RetrievedBlockContents(blockId BlockId, contents []byte)
 	defer this.mu.Unlock()
 
 	block := this.blocks[blockId]
+
+	// encrypt contents
+	contents, err := cryptEncrypt(block.Key, contents)
+	if err != nil {
+		panic(err)
+	}
 
 	if !bytes.Equal(hash(contents), block.Hash) {
 		Log.Warn.Printf("Reread file block has different hash from existing block for block %d (file %s)", block.Id, block.ParentFile)
@@ -190,6 +209,14 @@ func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
 
 	if !bytes.Equal(hash(blockBytes), block.Hash) {
 		Log.Error.Printf("Failed to recover block %d: hash check failed even though we retrieved K shards", block.Id)
+		return nil
+	}
+
+	// decryption
+	blockBytes, err := cryptDecrypt(block.Key, blockBytes)
+
+	if err != nil {
+		Log.Error.Printf("Failed to recover block %d: encryption failed: %s", err.Error())
 		return nil
 	}
 
@@ -289,7 +316,7 @@ func (this *BlockStore) update() {
 /*
  * blockstore metadata can be written and read from the disk using Save/Load functions below.
  * The file format is a block on each line, consisting of string:
- *     [blockid]:[fileid]:[file_offset]:[N]:[K]:[hex(hash)]:[shard1],[shard2],...,[shardn],
+ *     [blockid]:[fileid]:[file_offset]:[N]:[K]:[hex(hash)]:[hex(key)]:[shard1],[shard2],...,[shardn],
  * Each shard looks like:
        [shardid]/[length]/[peerid]/[available]/[hex(hash)]
  */
@@ -306,7 +333,7 @@ func (this *BlockStore) Save() bool {
 	defer fout.Close()
 
 	for _, block := range this.blocks {
-		blockDump := fmt.Sprintf("%d:%s:%d:%d:%d:%s:", block.Id, block.ParentFile, block.FileOffset, block.N, block.K, hex.EncodeToString(block.Hash))
+		blockDump := fmt.Sprintf("%d:%s:%d:%d:%d:%s:%s:", block.Id, block.ParentFile, block.FileOffset, block.N, block.K, hex.EncodeToString(block.Hash), hex.EncodeToString(block.Key))
 		for _, shard := range block.Shards {
 			peerString := ""
 			if shard.Peer != nil {
@@ -334,9 +361,9 @@ func (this *BlockStore) Load() bool {
 
 	scanner := bufio.NewScanner(fin)
 	for scanner.Scan() {
-		parts := strings.SplitN(scanner.Text(), ":", 7)
+		parts := strings.SplitN(scanner.Text(), ":", 8)
 
-		if len(parts) != 7 {
+		if len(parts) != 8 {
 			continue
 		}
 
@@ -347,8 +374,9 @@ func (this *BlockStore) Load() bool {
 		block.N = strToInt(parts[3])
 		block.K = strToInt(parts[4])
 		block.Hash, _ = hex.DecodeString(parts[5])
+		block.Key, _ = hex.DecodeString(parts[6])
 
-		shardStrings := strings.Split(parts[6], ",")
+		shardStrings := strings.Split(parts[7], ",")
 		block.Shards = make([]*BlockShard, len(shardStrings) - 1) // last element of shardStrings is empty
 		for i, shardString := range shardStrings {
 			if i < len(block.Shards) {
