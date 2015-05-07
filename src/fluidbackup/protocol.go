@@ -3,6 +3,7 @@ package fluidbackup
 import "net"
 import "net/rpc"
 import "fmt"
+import "time"
 
 /*
  * Local module for communication with peers.
@@ -139,19 +140,32 @@ func (this *Protocol) GetMe() PeerId {
  * RPC helper method
  */
 func (this *Protocol) call(peerId PeerId, fn string, args interface{}, reply interface{}) bool {
-	c, errx := rpc.Dial("tcp", peerId.String())
-	if errx != nil {
-		return false
-	}
-	defer c.Close()
+	c := make(chan bool, 1)
 
-	err := c.Call("Protocol.Handle"+fn, args, reply)
-	if err == nil {
-		return true
-	}
+	go func() {
+		client, errx := rpc.Dial("tcp", peerId.String())
+		if errx != nil {
+			c <- false
+			return
+		}
+		defer client.Close()
 
-	Log.Warn.Println(err)
-	return false
+		err := client.Call("Protocol.Handle"+fn, args, reply)
+		if err == nil {
+			c <- true
+			return
+		}
+
+		Log.Warn.Println(err)
+		c <- false
+	}()
+
+	select {
+		case b := <- c:
+			return b
+		case <- time.After(time.Second):
+			return false
+	}
 }
 
 /*
