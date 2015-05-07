@@ -161,7 +161,6 @@ func (this *Protocol) ping(peerId PeerId) bool {
 	args := &PingArgs{Me: this.GetMe()}
 	var reply PingReply
 	success := this.call(peerId, "Ping", args, &reply)
-	Log.Debug.Printf("Ping %s: %t", peerId.String(), success)
 	return success
 }
 
