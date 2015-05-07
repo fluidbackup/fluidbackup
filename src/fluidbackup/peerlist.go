@@ -37,7 +37,17 @@ type PeerList struct {
 	// Maintain a map of related peers
 	// for each peerId
 	relatedPeers map[PeerId][]PeerId
+
+	// How many peers do we want this peer list to have?
+	// the peer list will attempt to keep around this number
+	// of peers in the network at all times.
+	desiredNumPeers int
 }
+
+/*
+ * Config
+ */
+const defaultDesiredNumPeers int = 10
 
 /*
  * Constructor
@@ -49,6 +59,8 @@ func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	this.peers = make(map[PeerId]*Peer)
 	this.peerTrustScores = make(map[PeerId]int)
 	this.relatedPeers = make(map[PeerId][]PeerId)
+	this.desiredNumPeers = defaultDesiredNumPeers
+
 	this.lastRequest = nil
 
 	go func() {
@@ -110,6 +122,15 @@ func (this *PeerList) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool, 
 
 func (this *PeerList) update() {
 	this.mu.Lock()
+
+	if len(this.peers) < this.desiredNumPeers {
+		difference := this.desiredNumPeers - len(this.peers)
+		Log.Info.Printf("Obtaining (%v) new peers. Current (%v): Desired (%v)", difference, len(this.peers), this.desiredNumPeers)
+		this.mu.Unlock()
+		newNum := this.FindNewPeers(difference)
+		this.mu.Lock()
+		Log.Info.Printf("Network now contains (%v) peers.", newNum)
+	}
 
 	// handle last failed request if set
 	if this.lastRequest != nil {
@@ -277,15 +298,38 @@ func (this *PeerList) ensurePeerInTrustStore(peerId PeerId) {
 	}
 }
 
+// Return a list of peers sorted by trust
+func (this *PeerList) peersSortedByTrust() []PeerId {
+	sliceOfPeerIds := make([]PeerId, len(this.peerTrustScores))
+	i := 0
+	for peerId, _ := range this.peerTrustScores {
+		sliceOfPeerIds[i] = peerId
+		i += 1
+	}
+	sort.Sort(ByScore{sliceOfPeerIds, this.peerTrustScores})
+	return sliceOfPeerIds
+}
+
 // Update trust score geometrically based on success
 func (this *PeerList) updateTrustGeometrically(peerId PeerId, success bool) {
 	this.ensurePeerInTrustStore(peerId)
 	if success {
 		// do so geometrically
 		this.peerTrustScores[peerId] *= 2
+		// update related peers
+		relatedPeers := this.relatedPeers[peerId]
+		for _, relatedPeerId := range relatedPeers {
+			this.peerTrustScores[relatedPeerId] = int(float64(this.peerTrustScores[relatedPeerId]) * 1.5)
+		}
 	} else {
 		formerScore := this.peerTrustScores[peerId]
 		this.peerTrustScores[peerId] = int(formerScore / 2)
+
+		// update elated peers
+		relatedPeers := this.relatedPeers[peerId]
+		for _, relatedPeerId := range relatedPeers {
+			this.peerTrustScores[relatedPeerId] = int(2 / 3 * this.peerTrustScores[relatedPeerId])
+		}
 	}
 }
 
@@ -370,7 +414,7 @@ type PeerReferral struct {
 /*
  * Attempt to find (num) new peers through our current
  * peer network.
- * Returns how many peers were found.
+ * Returns how many peers were actually found in this pass.
  */
 func (this *PeerList) findNewPeers(num int) int {
 	// prevent anyone else from modifying peers
@@ -378,24 +422,26 @@ func (this *PeerList) findNewPeers(num int) int {
 	this.mu.Lock()
 
 	// First, build a list of peers sorted by trust
-	sliceOfPeerIds := make([]PeerId, len(this.peerTrustScores))
-	i := 0
-	for peerId, _ := range this.peerTrustScores {
-		sliceOfPeerIds[i] = peerId
-		i += 1
-	}
-	sort.Sort(ByScore{sliceOfPeerIds, this.peerTrustScores})
+	peersByTrust := this.peersSortedByTrust()
 
 	// Go through the top trustedPeers
-	// todo: don't reask. Optimizations to be made...
+	var numNewPeers int
 	var newPeerReferrals []PeerReferral
-	for _, peerId := range sliceOfPeerIds {
+	for _, peerId := range peersByTrust {
+		numAlreadyShared := len(this.relatedPeers[peerId])
+		if numAlreadyShared > num {
+			continue
+		}
 		// synchronously ask for more peers (for now)
 		// (todo: ask asynchronously to improve performance)
 		sharedPeerIds := this.peers[peerId].askForPeers(num)
 		newPeerReferral := PeerReferral{peerId, sharedPeerIds}
 		newPeerReferrals = append(newPeerReferrals, newPeerReferral)
-
+		numNewPeers += len(sharedPeerIds) - numAlreadyShared
+		if numNewPeers > num {
+			// we should have about enough peers
+			break
+		}
 	}
 
 	this.mu.Unlock()
@@ -428,13 +474,20 @@ func (this *PeerList) findNewPeers(num int) int {
 
 /*
  * Another peer asked us for shared peers.
- * Currently just give all the peers regardless.
+ * Currently give the other peer the peers we trust the most.
+ * ^ May be worth optimizing such that we don't immediately give new
+ * peers good peers. todo
  */
 func (this *PeerList) HandleShareNewPeers(peerId PeerId, num int) []PeerId {
-	// todo make this useful
-	peerList := make([]PeerId, len(this.peers))
+	// First, build a list of peers sorted by trust
+	peersByTrust := this.peersSortedByTrust()
+	length := len(peersByTrust)
+	if num < length {
+		length = num
+	}
+	peerList := make([]PeerId, length)
 	i := 0
-	for peerId, _ := range this.peers {
+	for _, peerId := range peersByTrust[:length] {
 		peerList[i] = peerId
 		i += 1
 	}
