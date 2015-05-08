@@ -259,25 +259,27 @@ func (this *BlockStore) update() {
 
 	// search for shards that don't have peers
 	for _, block := range this.blocks {
-		// first pass: find existing used peers
-		ignorePeers := make(map[PeerId]bool)
+		// first pass: find existing used peers,
+		// build the existing trust distribution
+		currentPeerLoadDistribution := make(map[PeerId]int)
 		for _, shard := range block.Shards {
 			if shard.Peer != nil {
-				ignorePeers[shard.Peer.id] = true
+				// increment in our distribution
+				currentPeerLoadDistribution[shard.Peer.id] += 1
 			}
 		}
 
 		// second pass: actually find new peers
 		for _, shard := range block.Shards {
 			if shard.Peer == nil {
-				availablePeer := this.peerList.FindAvailablePeer(shard.Length, ignorePeers, shard.Id)
+				availablePeer := this.peerList.FindAvailablePeer(shard.Length, currentPeerLoadDistribution, shard.Id)
 
 				if availablePeer == nil {
 					// no available peer for this shard, other shards in this block won't have peers either
 					break
 				} else {
 					shard.Peer = availablePeer
-					ignorePeers[shard.Peer.id] = true
+					currentPeerLoadDistribution[shard.Peer.id] += 1
 				}
 			}
 		}

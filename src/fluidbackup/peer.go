@@ -43,6 +43,7 @@ type Peer struct {
 	mu          sync.Mutex
 	protocol    *Protocol
 	fluidBackup *FluidBackup
+	peerList    *PeerList
 	id          PeerId
 	status      int
 	localBytes  int // how many bytes we've agreed to store for this peer
@@ -51,19 +52,22 @@ type Peer struct {
 	// cached values
 	localUsedBytes  int
 	remoteUsedBytes int
-	lastVerifyTime time.Time // last time we performed a shard storage verification
+	lastVerifyTime  time.Time // last time we performed a shard storage verification
 
 	// set of shards that we have accounted for in the cached remoteUsedBytes
 	// false if not replicated yet, true otherwise
 	shardsAccounted map[BlockShardId]bool
 }
 
-func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
+func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol, peerList *PeerList) *Peer {
 	this := new(Peer)
 	this.fluidBackup = fluidBackup
 	this.protocol = protocol
 	this.id = id
 	this.status = STATUS_ONLINE
+	// save peerList for operations on our local peer in
+	// response to simulations
+	this.peerList = peerList
 	this.shardsAccounted = make(map[BlockShardId]bool)
 	this.accountLocalUsedBytes()
 
@@ -86,6 +90,7 @@ func MakePeer(id PeerId, fluidBackup *FluidBackup, protocol *Protocol) *Peer {
 /*
  * Our local peer wants to propose agreement
  * with the represented remote peer.
+ * currently ONE Agreement per shard (TODO: change?)
  */
 func (this *Peer) proposeAgreement(localBytes int, remoteBytes int) bool {
 	if this.protocol.proposeAgreement(this.id, localBytes, remoteBytes) {
@@ -113,7 +118,7 @@ func (this *Peer) accountLocalUsedBytes() {
 	this.localUsedBytes = 0
 	files, _ := ioutil.ReadDir("store/")
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".obj") && strings.HasSuffix(f.Name(), this.id.String() + "_") {
+		if strings.HasSuffix(f.Name(), ".obj") && strings.HasSuffix(f.Name(), this.id.String()+"_") {
 			fi, err := os.Stat("store/" + f.Name())
 			if err == nil {
 				this.localUsedBytes += int(fi.Size())
@@ -312,7 +317,11 @@ func (this *Peer) update() {
 			delete(this.shardsAccounted, *randomShard)
 			this.mu.Unlock()
 			this.deleteShard(*randomShard)
-			// TODO: probably want to decrease trust, if trust too low maybe remove all the shards and erase peer from our database
+			// Decrease trust
+			this.peerList.UpdateTrustPostVerification(this.id, false)
+			// If trust too low maybe remove all the shards and erase peer from our database (TODO)
+		} else {
+			this.peerList.UpdateTrustPostVerification(this.id, true)
 		}
 	}
 }
