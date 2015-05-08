@@ -228,6 +228,7 @@ func (this *Peer) eventStoreShard(label int64, bytes []byte) bool {
 		return false
 	}
 
+	Log.Debug.Printf("Stored shard %d for peer %s (len=%d)", label, this.id.String(), len(bytes))
 	this.remoteUsedBytes += len(bytes)
 	return true
 }

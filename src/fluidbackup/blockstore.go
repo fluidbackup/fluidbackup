@@ -81,6 +81,14 @@ func (this *BlockStore) setFileStore(fileStore *FileStore) {
 	this.fileStore = fileStore
 }
 
+func (this *BlockStore) setReplication(n int, k int) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	this.replicateN = n
+	this.replicateK = k
+	Log.Info.Printf("Updated erasure coding parameters to N=%d,K=%d", this.replicateN, this.replicateK)
+}
+
 func (this *BlockStore) RegisterBlock(fileId FileId, offset int, contents []byte) BlockId {
 	this.mu.Lock()
 	defer this.mu.Unlock()

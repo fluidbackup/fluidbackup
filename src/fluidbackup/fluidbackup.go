@@ -78,3 +78,7 @@ func (this *FluidBackup) RecoverFile(path string) bool {
 func (this *FluidBackup) DiscoveredPeer(ipport string) {
 	this.peerList.DiscoveredPeer(strToPeerId(ipport))
 }
+
+func (this *FluidBackup) SetReplication(n int, k int) {
+	this.blockStore.setReplication(n, k)
+}

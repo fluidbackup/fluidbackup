@@ -19,15 +19,42 @@ func main() {
 
 	for {
 		line, _ := reader.ReadString('\n')
-		fmt.Printf("Received command: %s\n", line)
+		fmt.Printf("[UI] Received command: %s\n", line)
 		parts := strings.Split(strings.TrimSpace(line), " ")
 
 		if parts[0] == "register" {
-			fs.RegisterFile(parts[1])
+			if len(parts) >= 2 {
+				fs.RegisterFile(parts[1])
+			} else {
+				fmt.Println("[UI] usage: register filename")
+			}
 		} else if parts[0] == "recover" {
-			fs.RegisterFile(parts[1])
+			if len(parts) >= 2 {
+				fs.RecoverFile(parts[1])
+			} else {
+				fmt.Println("[UI] usage: recover filename")
+			}
 		} else if parts[0] == "discover" {
-			fs.DiscoveredPeer(parts[1])
+			if len(parts) >= 2 {
+				fs.DiscoveredPeer(parts[1])
+			} else {
+				fmt.Println("[UI] usage: discover ipaddr:port (e.g., discover 127.0.0.1:19838)")
+			}
+		} else if parts[0] == "set" {
+			if len(parts) >= 3 {
+				n, _ := strconv.ParseInt(parts[1], 0, 32)
+				k, _ := strconv.ParseInt(parts[2], 0, 32)
+				fs.SetReplication(int(n), int(k))
+			} else {
+				fmt.Println("[UI] usage: set n k (e.g. set 12 8)")
+			}
+		} else if parts[0] == "quit" || parts[0] == "stop" || parts[0] == "exit" {
+			fs.Stop()
+			break
+		} else if parts[0] == "save" {
+			fs.Save()
+		} else if parts[0] == "load" {
+			fs.Load()
 		}
 	}
 }
