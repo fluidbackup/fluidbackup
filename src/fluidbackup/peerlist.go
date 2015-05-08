@@ -485,6 +485,8 @@ type PeerReferral struct {
  * Attempt to find (num) new peers through our current
  * peer network.
  * Returns how many peers were actually found in this pass.
+ * This number can be more than the given, which is acceptable,
+ * or less, which is less tolerable if there are peers available.
  */
 func (this *PeerList) findNewPeers(num int) int {
 	// prevent anyone else from modifying peers
