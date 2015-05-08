@@ -235,9 +235,6 @@ func TestFailVerify(t *testing.T) {
 }
 
 func TestBasicPeerSharing(t *testing.T) {
-	// todo: need to implement:
-	// - trust ranking
-	// - how many peers do we want?
 	mainPort := 19838
 	bMain := MakeFluidBackup(mainPort)
 
@@ -287,4 +284,8 @@ func TestBasicPeerSharing(t *testing.T) {
 	for _, inst := range bOther {
 		inst.Stop()
 	}
+}
+
+func TestBenchmark(t *testing.T) {
+
 }
