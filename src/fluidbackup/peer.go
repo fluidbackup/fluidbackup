@@ -53,6 +53,8 @@ type Peer struct {
 	localUsedBytes  int
 	remoteUsedBytes int
 	lastVerifyTime  time.Time // last time we performed a shard storage verification
+	lastVerifySuccessTime time.Time
+	verifyFailCount int // count of successive verification failures
 
 	// set of shards that we have accounted for in the cached remoteUsedBytes
 	// false if not replicated yet, true otherwise
@@ -144,7 +146,17 @@ func (this *Peer) storeShard(shard *BlockShard) bool {
 	}
 
 	this.shardsAccounted[shard.Id] = true
-	return this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
+	result := this.protocol.storeShard(this.id, int64(shard.Id), shard.Contents)
+
+	if result == 0 {
+		return true
+	} else if result == -2 {
+		// peer actively refused the shard!
+		// probably the agreement is not synchronized or peer terminated agreement
+		go this.terminateAgreement()
+	}
+
+	return false
 }
 
 func (this *Peer) deleteShard(shardId BlockShardId) bool {
@@ -170,7 +182,7 @@ func (this *Peer) deleteShard(shardId BlockShardId) bool {
 	return true
 }
 
-func (this *Peer) retrieveShard(shardId BlockShardId) []byte {
+func (this *Peer) retrieveShard(shardId BlockShardId) ([]byte, bool) {
 	return this.protocol.retrieveShard(this.id, int64(shardId))
 }
 
@@ -309,22 +321,68 @@ func (this *Peer) update() {
 
 	if randomShard != nil {
 		Log.Debug.Printf("Verifying shard %d on peer %s", *randomShard, this.id.String())
-		bytes := this.retrieveShard(*randomShard)
-		if !this.fluidBackup.blockStore.VerifyShard(this, *randomShard, bytes) {
-			// shard is invalid, delete from remote end
-			// block store will re-assign it already from the verifyshard call, so don't need to do anything else about that
-			Log.Info.Printf("Failed verification of shard %d on peer %s!", *randomShard, this.id.String())
+		bytes, success := this.retrieveShard(*randomShard)
+
+		if !success || !this.fluidBackup.blockStore.VerifyShard(this, *randomShard, bytes) {
+			// either we failed to communicate with the peer (if !success),
+			// or the peer sent us corrupted shard data (if success)
+			failReason := "invalid shard data"
+			if !success {
+				failReason = "peer communication failed"
+			}
+			Log.Info.Printf("Failed verification of shard %d on peer %s: %s", *randomShard, this.id.String(), failReason)
+
 			this.mu.Lock()
-			delete(this.shardsAccounted, *randomShard)
+			if success {
+				// shard is invalid, delete from remote end
+				// block store will re-assign it already from the verifyshard call, so don't need to do anything else about that
+				delete(this.shardsAccounted, *randomShard)
+				go this.deleteShard(*randomShard)
+			}
+
+			// we also check if this peer is failed per our one-day policy, in which case we would want to clear all accounted shards
+			this.verifyFailCount++
+			if this.verifyFailCount > 5 && time.Now().After(this.lastVerifySuccessTime.Add(time.Second * VERIFY_FAIL_WAIT_INTERVAL)) {
+				go this.terminateAgreement()
+			}
 			this.mu.Unlock()
-			this.deleteShard(*randomShard)
+
 			// Decrease trust
 			this.peerList.UpdateTrustPostVerification(this.id, false)
-			// If trust too low maybe remove all the shards and erase peer from our database (TODO)
 		} else {
 			this.peerList.UpdateTrustPostVerification(this.id, true)
+
+			this.mu.Lock()
+			this.verifyFailCount = 0
+			this.lastVerifySuccessTime = time.Now()
+			this.mu.Unlock()
 		}
 	}
+}
+
+func (this *Peer) terminateAgreement() {
+	this.mu.Lock()
+	Log.Info.Printf("Terminating agreement with peer %s", this.id.String())
+	this.peerList.UpdateTrustPostVerification(this.id, false)
+
+	for shardId := range this.shardsAccounted {
+		this.fluidBackup.blockStore.VerifyShard(this, shardId, nil)
+		delete(this.shardsAccounted, shardId)
+	}
+
+	this.localBytes = 0
+	this.localUsedBytes = 0
+	this.remoteBytes = 0
+	this.remoteUsedBytes = 0
+
+	// clear this peer's files from filesystem
+	files, _ := ioutil.ReadDir("store/")
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".obj") && strings.HasSuffix(f.Name(), this.id.String()+"_") {
+			os.Remove("store/" + f.Name())
+		}
+	}
+	this.mu.Unlock()
 }
 
 /* ============== *

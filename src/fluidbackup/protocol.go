@@ -198,7 +198,7 @@ func (this *Protocol) proposeAgreement(peerId PeerId, localBytes int, remoteByte
 /*
  * Store a set of bytes with the given known peer
  */
-func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool {
+func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) int {
 	args := &StoreShardArgs{
 		Me:    this.GetMe(),
 		Label: label,
@@ -207,7 +207,14 @@ func (this *Protocol) storeShard(peerId PeerId, label int64, bytes []byte) bool 
 	var reply StoreShardReply
 	success := this.call(peerId, "StoreShard", args, &reply)
 	this.peerList.UpdateTrustPostStorage(peerId, success && reply.Confirm)
-	return success && reply.Confirm
+
+	if !success {
+		return -1
+	} else if !reply.Confirm {
+		return -2
+	} else {
+		return 0
+	}
 }
 
 func (this *Protocol) deleteShard(peerId PeerId, label int64) {
@@ -222,7 +229,7 @@ func (this *Protocol) deleteShard(peerId PeerId, label int64) {
 /*
  * Retrieve a labeled set of bytes from the given peer.
  */
-func (this *Protocol) retrieveShard(peerId PeerId, label int64) []byte {
+func (this *Protocol) retrieveShard(peerId PeerId, label int64) ([]byte, bool) {
 	args := &RetrieveShardArgs{
 		Me:    this.GetMe(),
 		Label: label,
@@ -231,9 +238,9 @@ func (this *Protocol) retrieveShard(peerId PeerId, label int64) []byte {
 	success := this.call(peerId, "RetrieveShard", args, &reply)
 	this.peerList.UpdateTrustPostRetrieval(peerId, success)
 	if !success {
-		return nil
+		return nil, false
 	} else {
-		return reply.Bytes
+		return reply.Bytes, true
 	}
 }
 

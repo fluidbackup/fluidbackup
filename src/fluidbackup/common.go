@@ -12,6 +12,7 @@ import "strconv"
 const FILE_BLOCK_SIZE = 1024 * 1024
 const DEFAULT_N = 12
 const DEFAULT_K = 8
+const VERIFY_FAIL_WAIT_INTERVAL = 3600 * 24 // how long in seconds we wait after verification failures before deleting shards
 
 func randSeq(n int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")

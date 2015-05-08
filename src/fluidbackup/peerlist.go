@@ -11,10 +11,11 @@ import "sort"
 
 type PeerRequest struct {
 	Bytes int
+	IgnorePeers map[PeerId]bool
 
 	// a list of peers that we are already using
 	// and how much use they are getting
-	PeerUsageDistribution map[PeerId]int
+	PeerUsage map[PeerId]int
 }
 
 /*
@@ -105,11 +106,11 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
  * [shard] is the BlockShard that will be replicated with this reservation (used for space accounting).
  * Returns nil if we aren't able to satisfy the request (in this case we should also launch task to get more space).
  */
-func (this *PeerList) FindAvailablePeer(bytes int, peerShardDistribution map[PeerId]int, shardId BlockShardId) *Peer {
+func (this *PeerList) FindAvailablePeer(bytes int, peerUsage map[PeerId] int, ignorePeers map[PeerId]bool, shardId BlockShardId) *Peer {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	availablePeers := this.availablePeersByTrust(peerShardDistribution)
+	availablePeers := this.availablePeersByTrust(peerUsage, ignorePeers)
 
 	for _, peerId := range availablePeers {
 		peer := this.peers[peerId]
@@ -120,8 +121,8 @@ func (this *PeerList) FindAvailablePeer(bytes int, peerShardDistribution map[Pee
 
 	// none of our peers could satisfy this request with existing agreements
 	// update last request so that we will create new agreement and eventually satisfy (but don't overwrite requests with less constraints)
-	if this.lastRequest == nil || len(this.lastRequest.PeerUsageDistribution) > len(peerShardDistribution) {
-		this.lastRequest = &PeerRequest{Bytes: bytes, PeerUsageDistribution: peerShardDistribution}
+	if this.lastRequest == nil || len(this.lastRequest.IgnorePeers) > len(ignorePeers) {
+		this.lastRequest = &PeerRequest{Bytes: bytes, PeerUsage: peerUsage, IgnorePeers: ignorePeers}
 	}
 	return nil
 }
@@ -145,10 +146,14 @@ func sum(mapToSum map[PeerId]int) int {
  * TODO: if trust distribution changes, current storage
  * distribution does not change. Maybe reconsider?
  */
-func (this *PeerList) availablePeersByTrust(peerLoadDistribution map[PeerId]int) []PeerId {
+func (this *PeerList) availablePeersByTrust(peerLoadDistribution map[PeerId]int, ignorePeers map[PeerId]bool) []PeerId {
 
 	numShards := sum(peerLoadDistribution)
 	trustSum := sum(this.peerTrustScores)
+
+	if trustSum == 0 {
+		return nil
+	}
 
 	// make a map of scores to sort by
 	peerAvailability := make(map[PeerId]int)
@@ -157,11 +162,13 @@ func (this *PeerList) availablePeersByTrust(peerLoadDistribution map[PeerId]int)
 		peerAvailability[peerId] = expectedNum - load
 	}
 
-	sliceOfPeerIds := make([]PeerId, len(this.peers))
-	i := 0
-	for peerId, _ := range this.peers {
-		sliceOfPeerIds[i] = peerId
-		i += 1
+	sliceOfPeerIds := make([]PeerId, 0, len(this.peers))
+	for peerId, peer := range this.peers {
+		// only consider online peers that shouldn't be ignored
+		_, ignored := ignorePeers[peerId]
+		if peer.isOnline() && !ignored {
+			sliceOfPeerIds = append(sliceOfPeerIds, peerId)
+		}
 	}
 	sort.Sort(ByScore{sliceOfPeerIds, peerAvailability})
 	return sliceOfPeerIds
@@ -203,7 +210,7 @@ func (this *PeerList) createAgreementSatisfying(request PeerRequest) {
 	// pick best available peer
 	this.mu.Lock()
 	possiblePeers := make([]*Peer, 0)
-	availablePeers := this.availablePeersByTrust(request.PeerUsageDistribution)
+	availablePeers := this.availablePeersByTrust(request.PeerUsage, request.IgnorePeers)
 	for _, peerId := range availablePeers {
 		peer := this.peers[peerId]
 		if peer.isOnline() {

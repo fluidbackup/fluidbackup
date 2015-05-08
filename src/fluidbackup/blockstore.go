@@ -56,6 +56,7 @@ type BlockStore struct {
 	shards                 map[BlockShardId]*BlockShard
 	replicateN, replicateK int
 	fileStore              *FileStore
+	peerUsage              map[PeerId]int
 }
 
 func MakeBlockStore(fluidBackup *FluidBackup, peerList *PeerList) *BlockStore {
@@ -65,6 +66,7 @@ func MakeBlockStore(fluidBackup *FluidBackup, peerList *PeerList) *BlockStore {
 	this.shards = make(map[BlockShardId]*BlockShard, 0)
 	this.replicateN = DEFAULT_N
 	this.replicateK = DEFAULT_K
+	this.peerUsage = make(map[PeerId]int)
 
 	// perpetually ensure blocks are synced
 	go func() {
@@ -187,7 +189,7 @@ func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
 		}
 
 		Log.Debug.Printf("Attempting to retrieve shard %d from peer %s", shard.Id, shard.Peer.id.String())
-		currBytes := shard.Peer.retrieveShard(shard.Id)
+		currBytes, _ := shard.Peer.retrieveShard(shard.Id)
 
 		if currBytes == nil {
 			Log.Warn.Printf("Failed to retrieve shard %d from peer %s (empty response)", shard.Id, shard.Peer.id.String())
@@ -232,6 +234,20 @@ func (this *BlockStore) RecoverBlock(blockId BlockId) []byte {
 	return blockBytes
 }
 
+func (this *BlockStore) recomputePeerUsage() {
+	for peerId := range this.peerUsage {
+		this.peerUsage[peerId] = 0
+	}
+
+	for _, block := range this.blocks {
+		for _, shard := range block.Shards {
+			if shard.Peer != nil {
+				this.peerUsage[shard.Peer.id] = this.peerUsage[shard.Peer.id] + shard.Length
+			}
+		}
+	}
+}
+
 func (this *BlockStore) VerifyShard(peer *Peer, shardId BlockShardId, contents []byte) bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -243,7 +259,7 @@ func (this *BlockStore) VerifyShard(peer *Peer, shardId BlockShardId, contents [
 		return false
 	}
 
-	success := bytes.Equal(hash(contents), shard.Hash)
+	success := contents != nil && bytes.Equal(hash(contents), shard.Hash)
 
 	if !success {
 		Log.Warn.Printf("Verification of shard %d (on %s) failed: hash mismatch (len1=%d,len2=%d)", shardId, peer.id.String(), len(contents), shard.Length)
@@ -266,30 +282,29 @@ func (this *BlockStore) GetShard(shardId BlockShardId) *BlockShard {
 func (this *BlockStore) update() {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+	this.recomputePeerUsage()
 
 	// search for shards that don't have peers
 	for _, block := range this.blocks {
-		// first pass: find existing used peers,
-		// build the existing trust distribution
-		currentPeerLoadDistribution := make(map[PeerId]int)
+		// first pass: find existing used peers
+		ignorePeers := make(map[PeerId]bool)
 		for _, shard := range block.Shards {
 			if shard.Peer != nil {
-				// increment in our distribution
-				currentPeerLoadDistribution[shard.Peer.id] += 1
+				ignorePeers[shard.Peer.id] = true
 			}
 		}
 
 		// second pass: actually find new peers
 		for _, shard := range block.Shards {
 			if shard.Peer == nil {
-				availablePeer := this.peerList.FindAvailablePeer(shard.Length, currentPeerLoadDistribution, shard.Id)
+				availablePeer := this.peerList.FindAvailablePeer(shard.Length, this.peerUsage, ignorePeers, shard.Id)
 
 				if availablePeer == nil {
 					// no available peer for this shard, other shards in this block won't have peers either
 					break
 				} else {
 					shard.Peer = availablePeer
-					currentPeerLoadDistribution[shard.Peer.id] += 1
+					ignorePeers[shard.Peer.id] = true
 				}
 			}
 		}
@@ -308,7 +323,7 @@ func (this *BlockStore) update() {
 					Log.Debug.Printf("Failed to commit shard %d to peer %s", shard.Id, shard.Peer.id.String())
 
 					// try to find another peer in that case
-					shard.Peer.deleteShard(shard.Id)
+					go shard.Peer.deleteShard(shard.Id)
 					shard.Peer = nil
 				}
 				break
