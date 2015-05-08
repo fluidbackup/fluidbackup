@@ -13,7 +13,8 @@ type PeerRequest struct {
 	Bytes int
 
 	// a list of peers that we are already using
-	IgnorePeers map[PeerId]bool
+	// and how much use they are getting
+	PeerUsageDistribution map[PeerId]int
 }
 
 /*
@@ -33,6 +34,7 @@ type PeerList struct {
 	// trust scores, used for peer discovery.
 	// See trust score section for documentation.
 	peerTrustScores map[PeerId]int
+	muTrust         sync.Mutex
 
 	// Maintain a map of related peers
 	// for each peerId
@@ -87,7 +89,7 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 	if !ok {
 		Log.Info.Printf("Registering newly discovered peer at %s", peerId.String())
 		// Make local representations of known remote peers.
-		peer = MakePeer(peerId, this.fluidBackup, this.protocol)
+		peer = MakePeer(peerId, this.fluidBackup, this.protocol, this)
 		this.peers[peerId] = peer
 		// Add to trust map, initial score of 1.
 		this.AddPeerToTrustStore(peerId)
@@ -98,28 +100,71 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 /*
  * Attempts to identify an available peer.
  * If multiple, returns a trustworthy peer, such that the number
- * of bytes on that peer follows the trust distribution. TODO)
+ * of bytes on that peer follows the trust distribution.
  * Caller requires [bytes] free bytes to use and doesn't want the peer to be in [ignorePeers] list.
  * [shard] is the BlockShard that will be replicated with this reservation (used for space accounting).
  * Returns nil if we aren't able to satisfy the request (in this case we should also launch task to get more space).
  */
-func (this *PeerList) FindAvailablePeer(bytes int, ignorePeers map[PeerId]bool, shardId BlockShardId) *Peer {
+func (this *PeerList) FindAvailablePeer(bytes int, peerShardDistribution map[PeerId]int, shardId BlockShardId) *Peer {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	for peerId, peer := range this.peers {
-		_, shouldIgnore := ignorePeers[peerId]
-		if !shouldIgnore && peer.reserveBytes(bytes, shardId, false) {
+	availablePeers := this.availablePeersByTrust(peerShardDistribution)
+
+	for _, peerId := range availablePeers {
+		peer := this.peers[peerId]
+		if peer.reserveBytes(bytes, shardId, false) {
 			return peer
 		}
 	}
 
 	// none of our peers could satisfy this request with existing agreements
 	// update last request so that we will create new agreement and eventually satisfy (but don't overwrite requests with less constraints)
-	if this.lastRequest == nil || len(this.lastRequest.IgnorePeers) > len(ignorePeers) {
-		this.lastRequest = &PeerRequest{Bytes: bytes, IgnorePeers: ignorePeers}
+	if this.lastRequest == nil || len(this.lastRequest.PeerUsageDistribution) > len(peerShardDistribution) {
+		this.lastRequest = &PeerRequest{Bytes: bytes, PeerUsageDistribution: peerShardDistribution}
 	}
 	return nil
+}
+
+// a private sum helper
+func sum(mapToSum map[PeerId]int) int {
+	sum := 0
+	for _, value := range mapToSum {
+		sum += value
+	}
+	return sum
+}
+
+/*
+ * Returns a list of peers ordered such that
+ * the number of shards distributed on each peer
+ * follows the trust distribution, and such that
+ * the ordering respects how many more "shard slots"
+ * are available on each peer (0 (lots) -> len (none))
+ *
+ * TODO: if trust distribution changes, current storage
+ * distribution does not change. Maybe reconsider?
+ */
+func (this *PeerList) availablePeersByTrust(peerLoadDistribution map[PeerId]int) []PeerId {
+
+	numShards := sum(peerLoadDistribution)
+	trustSum := sum(this.peerTrustScores)
+
+	// make a map of scores to sort by
+	peerAvailability := make(map[PeerId]int)
+	for peerId, load := range peerLoadDistribution {
+		expectedNum := int(this.peerTrustScores[peerId] * numShards / trustSum)
+		peerAvailability[peerId] = expectedNum - load
+	}
+
+	sliceOfPeerIds := make([]PeerId, len(this.peers))
+	i := 0
+	for peerId, _ := range this.peers {
+		sliceOfPeerIds[i] = peerId
+		i += 1
+	}
+	sort.Sort(ByScore{sliceOfPeerIds, peerAvailability})
+	return sliceOfPeerIds
 }
 
 func (this *PeerList) update() {
@@ -155,12 +200,13 @@ func (this *PeerList) update() {
 }
 
 func (this *PeerList) createAgreementSatisfying(request PeerRequest) {
-	// pick random online peer that isn't in the ignore list
+	// pick best available peer
 	this.mu.Lock()
 	possiblePeers := make([]*Peer, 0)
-	for peerId, peer := range this.peers {
-		_, shouldIgnore := request.IgnorePeers[peerId]
-		if !shouldIgnore && peer.isOnline() {
+	availablePeers := this.availablePeersByTrust(request.PeerUsageDistribution)
+	for _, peerId := range availablePeers {
+		peer := this.peers[peerId]
+		if peer.isOnline() {
 			possiblePeers = append(possiblePeers, peer)
 		}
 	}
@@ -318,6 +364,9 @@ func (this *PeerList) peersSortedByTrust() []PeerId {
 
 // Update trust score geometrically based on success
 func (this *PeerList) updateTrustGeometrically(peerId PeerId, success bool) {
+	this.muTrust.Lock()
+	defer this.muTrust.Unlock()
+
 	this.ensurePeerInTrustStore(peerId)
 	if success {
 		// do so geometrically
@@ -359,6 +408,14 @@ func (this *PeerList) UpdateTrustPostRetrieval(peerId PeerId, success bool) {
  * good/bad storage
  */
 func (this *PeerList) UpdateTrustPostStorage(peerId PeerId, success bool) {
+	this.updateTrustGeometrically(peerId, success)
+}
+
+/*
+ * Update the trust score of a peer in response to a
+ * verification attempt
+ */
+func (this *PeerList) UpdateTrustPostVerification(peerId PeerId, success bool) {
 	this.updateTrustGeometrically(peerId, success)
 }
 
@@ -428,11 +485,13 @@ type PeerReferral struct {
  * Attempt to find (num) new peers through our current
  * peer network.
  * Returns how many peers were actually found in this pass.
+ * This number can be more than the given, which is acceptable,
+ * or less, which is less tolerable if there are peers available.
  */
 func (this *PeerList) findNewPeers(num int) int {
 	// prevent anyone else from modifying peers
 	// and trust scores while we are working with them
-	this.mu.Lock()
+	this.muTrust.Lock()
 
 	// First, build a list of peers sorted by trust
 	peersByTrust := this.peersSortedByTrust()
@@ -457,7 +516,7 @@ func (this *PeerList) findNewPeers(num int) int {
 		}
 	}
 
-	this.mu.Unlock()
+	this.muTrust.Unlock()
 
 	// add new peers to our peerList
 	trueNewPeerCount := 0

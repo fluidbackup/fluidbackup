@@ -7,6 +7,7 @@ import "math/rand"
 import "os"
 import "bytes"
 import "strings"
+import "fmt"
 
 func TestBasic(t *testing.T) {
 	fileContents := make([]byte, 1500*1024)
@@ -262,10 +263,22 @@ func TestBasicPeerSharing(t *testing.T) {
 
 	time.Sleep(time.Second * 5)
 
+	// check the number of discovered peers for one on centroid
 	numPeers := newDiscoverer.peerList.NumPeers()
 	desiredNum := PeerListDefaultDesiredNumPeers
-	if numPeers != desiredNum {
-		t.Fatalf("Num peers %v, expected %v", numPeers, desiredNum)
+	fmt.Printf("Discoverer Found %v peers!\n", numPeers)
+	if numPeers < desiredNum {
+		t.Fatalf("Num peers %v, expected at least %v", numPeers, desiredNum)
+	}
+
+	// check the number of discovered peers for each bOther
+	for i := range bOther {
+		fbOther := bOther[i]
+		numPeers := fbOther.peerList.NumPeers()
+		fmt.Printf("%v Found %v peers!\n", fbOther.protocol.port, numPeers)
+		if numPeers < desiredNum {
+			t.Fatalf("%v: Num peers %v, expected at least %v", fbOther.protocol.port, numPeers, desiredNum)
+		}
 	}
 
 	// shut down fluidbackup instances
