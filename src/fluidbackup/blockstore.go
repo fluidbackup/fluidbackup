@@ -50,12 +50,12 @@ type Block struct {
 }
 
 type BlockStore struct {
-	mu       sync.Mutex
-	peerList *PeerList
-	blocks   map[BlockId]*Block
-	shards   map[BlockShardId]*BlockShard
+	mu                     sync.Mutex
+	peerList               *PeerList
+	blocks                 map[BlockId]*Block
+	shards                 map[BlockShardId]*BlockShard
 	replicateN, replicateK int
-	fileStore *FileStore
+	fileStore              *FileStore
 }
 
 func MakeBlockStore(fluidBackup *FluidBackup, peerList *PeerList) *BlockStore {
@@ -307,7 +307,7 @@ func (this *BlockStore) update() {
 		for _, shard := range block.Shards {
 			if !shard.Available && shard.Contents == nil && this.fileStore != nil {
 				go this.fileStore.RequestReread(block.ParentFile, block.FileOffset, block.Id) // do asynchronously to avoid deadlock
-				break // only one reread request needed per block, since erasure coding yields all the shards
+				break                                                                         // only one reread request needed per block, since erasure coding yields all the shards
 			}
 		}
 	}
@@ -319,7 +319,7 @@ func (this *BlockStore) update() {
  *     [blockid]:[fileid]:[file_offset]:[N]:[K]:[hex(hash)]:[hex(key)]:[shard1],[shard2],...,[shardn],
  * Each shard looks like:
        [shardid]/[length]/[peerid]/[available]/[hex(hash)]
- */
+*/
 
 func (this *BlockStore) Save() bool {
 	this.mu.Lock()
@@ -375,9 +375,8 @@ func (this *BlockStore) Load() bool {
 		block.K = strToInt(parts[4])
 		block.Hash, _ = hex.DecodeString(parts[5])
 		block.Key, _ = hex.DecodeString(parts[6])
-
 		shardStrings := strings.Split(parts[7], ",")
-		block.Shards = make([]*BlockShard, len(shardStrings) - 1) // last element of shardStrings is empty
+		block.Shards = make([]*BlockShard, len(shardStrings)-1) // last element of shardStrings is empty
 		for i, shardString := range shardStrings {
 			if i < len(block.Shards) {
 				shardParts := strings.Split(shardString, "/")

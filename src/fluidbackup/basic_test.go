@@ -257,7 +257,8 @@ func TestBasicPeerSharing(t *testing.T) {
 	// Now, connect anoter peer to the centroid
 	newDiscoverer := MakeFluidBackup(mainPort - 1)
 	newDiscoverer.peerList.DiscoveredPeer(PeerId{Address: "127.0.0.1", Port: mainPort})
-	numPeers := newDiscoverer.peerList.FindNewPeers(len(bOther))
+	// No need for next line: they are now autodiscovered
+	// numPeers := newDiscoverer.peerList.FindNewPeers(len(bOther))
 
 	if numPeers != len(bOther)+1 {
 		t.Fatalf("Num peers %v, expected %v", numPeers, len(bOther)+1)

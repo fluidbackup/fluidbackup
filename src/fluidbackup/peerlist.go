@@ -97,6 +97,8 @@ func (this *PeerList) discoveredPeer(peerId PeerId) *Peer {
 
 /*
  * Attempts to identify an available peer.
+ * If multiple, returns a trustworthy peer, such that the number
+ * of bytes on that peer follows the trust distribution. TODO)
  * Caller requires [bytes] free bytes to use and doesn't want the peer to be in [ignorePeers] list.
  * [shard] is the BlockShard that will be replicated with this reservation (used for space accounting).
  * Returns nil if we aren't able to satisfy the request (in this case we should also launch task to get more space).
@@ -291,6 +293,7 @@ func (this *PeerList) Load() bool {
 // - related peers (one direction) (map)
 // - file storage agreement upholding
 // (externally exposed)
+// Trust is used for: picking where to store things
 
 // private method
 func (this *PeerList) ensurePeerInTrustStore(peerId PeerId) {
