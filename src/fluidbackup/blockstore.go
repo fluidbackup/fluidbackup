@@ -231,12 +231,14 @@ func (this *BlockStore) VerifyShard(peer *Peer, shardId BlockShardId, contents [
 	shard := this.shards[shardId]
 
 	if shard == nil {
+		Log.Warn.Printf("Verification of shard %d (on %s) failed: shard ID not found in shard table", shardId, peer.id.String())
 		return false
 	}
 
 	success := bytes.Equal(hash(contents), shard.Hash)
 
 	if !success {
+		Log.Warn.Printf("Verification of shard %d (on %s) failed: hash mismatch (len1=%d,len2=%d)", shardId, peer.id.String(), len(contents), shard.Length)
 		// peer is notifying us that this shard failed, let's re-assign it..
 		if shard.Peer == peer && shard.Available {
 			shard.Peer = nil
@@ -294,6 +296,10 @@ func (this *BlockStore) update() {
 					shard.Contents = nil
 				} else {
 					Log.Debug.Printf("Failed to commit shard %d to peer %s", shard.Id, shard.Peer.id.String())
+
+					// try to find another peer in that case
+					shard.Peer.deleteShard(shard.Id)
+					shard.Peer = nil
 				}
 				break
 			}
@@ -413,6 +419,7 @@ func (this *BlockStore) Load() bool {
 				shard.Parent = block
 				shard.ShardIndex = i
 				block.Shards[i] = shard
+				this.shards[shard.Id] = shard
 			}
 		}
 
