@@ -47,7 +47,7 @@ type PeerList struct {
 /*
  * Config
  */
-const defaultDesiredNumPeers int = 10
+const PeerListDefaultDesiredNumPeers int = 10
 
 /*
  * Constructor
@@ -59,7 +59,7 @@ func MakePeerList(fluidBackup *FluidBackup, protocol *Protocol) *PeerList {
 	this.peers = make(map[PeerId]*Peer)
 	this.peerTrustScores = make(map[PeerId]int)
 	this.relatedPeers = make(map[PeerId][]PeerId)
-	this.desiredNumPeers = defaultDesiredNumPeers
+	this.desiredNumPeers = PeerListDefaultDesiredNumPeers
 
 	this.lastRequest = nil
 
@@ -396,6 +396,13 @@ func (sorter ByScore) Less(i, j int) bool {
 	peerIdA := sorter.peerIds[i]
 	peerIdB := sorter.peerIds[j]
 	return sorter.peerScores[peerIdA] < sorter.peerScores[peerIdB]
+}
+
+/*
+ * public way to see how many peers we have.
+ */
+func (this *PeerList) NumPeers() int {
+	return len(this.peers)
 }
 
 /*

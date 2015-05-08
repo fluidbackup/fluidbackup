@@ -260,8 +260,12 @@ func TestBasicPeerSharing(t *testing.T) {
 	// No need for next line: they are now autodiscovered
 	// numPeers := newDiscoverer.peerList.FindNewPeers(len(bOther))
 
-	if numPeers != len(bOther)+1 {
-		t.Fatalf("Num peers %v, expected %v", numPeers, len(bOther)+1)
+	time.Sleep(time.Second * 5)
+
+	numPeers := newDiscoverer.peerList.NumPeers()
+	desiredNum := PeerListDefaultDesiredNumPeers
+	if numPeers != desiredNum {
+		t.Fatalf("Num peers %v, expected %v", numPeers, desiredNum)
 	}
 
 	// shut down fluidbackup instances
