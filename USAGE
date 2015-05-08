@@ -1,0 +1,21 @@
+First, follow INSTALL to set your GOPATH and install dependencies.
+
+To start up a client (port defaults to 19838 if not specified):
+	cd fluidbackup/src/ui
+	go run main.go [port]
+
+Discover other peers manually:
+	discover 127.0.0.1:19839
+	discover 127.0.0.1:19840
+
+Store a file with three replicas:
+	set 3 1
+	register /path/to/file
+
+Save and quit:
+	save
+	stop
+
+Restart and recover a file:
+	load
+	recover /path/to/file
